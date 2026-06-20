@@ -19,7 +19,8 @@ if not (PDF_DIR / f"{BOOK}.pdf").exists():
 
 
 class MockWordEncoder:
-    def encode(self, text):
+    # Add *args and **kwargs to catch tiktoken-specific configurations gracefully
+    def encode(self, text, *args, **kwargs):
         return list(re.finditer(r"\S+|\s+", text))
 
     def decode_single_token_bytes(self, token):

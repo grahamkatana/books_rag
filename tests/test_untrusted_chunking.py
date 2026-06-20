@@ -18,10 +18,8 @@ if not PDF_PATH.exists():
 
 
 class MockWordEncoder:
-    """Whitespace-based stand-in for tiktoken, used the same way as in
-    the trusted-book chunking tests -- avoids needing network access to
-    download cl100k_base just to validate the chunking logic itself."""
-    def encode(self, text):
+    # Add *args and **kwargs to catch tiktoken-specific configurations gracefully
+    def encode(self, text, *args, **kwargs):
         return list(re.finditer(r"\S+|\s+", text))
 
     def decode_single_token_bytes(self, token):
