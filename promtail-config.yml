@@ -1,0 +1,31 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+# Tracks how far into each file Promtail has already read, so a restart
+# doesn't re-ship lines it already sent. Survives container restarts as
+# long as this stays inside the container's own filesystem (it's fine
+# for it to reset on a full container recreate -- a few duplicate lines
+# in Loki is harmless, unlike gaps).
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: book_rag_api
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: book_rag_api
+          # Only the active file, not a glob like app.log* -- Promtail
+          # re-scans for files at this path periodically and correctly
+          # picks up the fresh file Python's RotatingFileHandler creates
+          # after a rotation (different inode, same path). The rotated
+          # .1/.2/etc backups are on-disk redundancy, not something this
+          # is meant to re-ship; if Promtail was down across a rotation,
+          # whatever got rotated away before it came back isn't recovered
+          # automatically by this config.
+          __path__: /var/log/book_rag/app.log

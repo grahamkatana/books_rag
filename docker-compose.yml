@@ -1,0 +1,197 @@
+# -----production-----
+# services:
+#   qdrant:
+#     image: qdrant/qdrant:v1.17.1
+#     container_name: book_rag_qdrant
+#     restart: unless-stopped
+#     ports:
+#       - "6333:6333"   # REST API -- what app/config.py's QDRANT_URL points to
+#       - "6334:6334"   # gRPC -- not used by this project's client calls, but
+#                        # the qdrant-client library can use it, and some tools
+#                        # (e.g. the web dashboard) expect it to be reachable
+#     volumes:
+#       - qdrant_storage:/qdrant/storage
+#     environment:
+#       # Uncomment to require an API key (recommended if this is ever
+#       # reachable from outside localhost). Set the matching value in this
+#       # project's .env as QDRANT_API_KEY.
+#       # QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+#       QDRANT__LOG_LEVEL: INFO
+#     healthcheck:
+#       test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5
+#       start_period: 10s
+
+#   postgres:
+#     image: postgres:16
+#     container_name: book_rag_postgres
+#     restart: unless-stopped
+#     environment:
+#       POSTGRES_USER: book_rag
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-book_rag_dev_password}
+#       POSTGRES_DB: book_rag
+#     ports:
+#       - "5432:5432"   # exposed so you can also point a bare-host `uv run` at it if you want
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U book_rag"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 10
+
+#   api:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile
+#     container_name: book_rag_api
+#     restart: unless-stopped
+#     ports:
+#       - "8000:8000"   # Swagger UI: http://localhost:8000/swagger-ui
+#     env_file:
+#       - .env
+#     environment:
+#       # Override whatever's in .env -- from inside this container,
+#       # "localhost" means this container itself, not the qdrant/postgres
+#       # ones. Docker's embedded DNS resolves service names instead. .env
+#       # keeps QDRANT_URL=http://localhost:6333 and DATABASE_URL=sqlite:...
+#       # unchanged for when you run `uv run python server.py` directly on
+#       # the host, where those are correct because of the port mappings.
+#       QDRANT_URL: http://qdrant:6333
+#       DATABASE_URL: postgresql+psycopg://book_rag:${POSTGRES_PASSWORD:-book_rag_dev_password}@postgres:5432/book_rag
+#     volumes:
+#       - app_logs:/app/logs   # shared with promtail below, read-only there
+#     depends_on:
+#       qdrant:
+#         condition: service_healthy
+#       postgres:
+#         condition: service_healthy
+
+#   frontend:
+#     build:
+#       context: ./frontend
+#       dockerfile: Dockerfile
+#     container_name: book_rag_frontend
+#     restart: unless-stopped
+#     ports:
+#       - "3000:80"   # http://localhost:3000
+#     depends_on:
+#       - api
+
+#   loki:
+#     image: grafana/loki:3.7.2
+#     container_name: book_rag_loki
+#     restart: unless-stopped
+#     ports:
+#       - "3100:3100"   # Loki's own API -- not something you query directly day to day,
+#                        # but useful for `curl localhost:3100/ready` when debugging
+#     command: -config.file=/etc/loki/local-config.yaml
+#     # No config file mounted here on purpose: the image ships a sane
+#     # single-binary default config at that exact path, fine for this
+#     # scale. Provide your own (volume-mounted, same as promtail's below)
+#     # if you ever need to change retention/storage.
+
+#   promtail:
+#     image: grafana/promtail:3.7.2
+#     container_name: book_rag_promtail
+#     restart: unless-stopped
+#     volumes:
+#       - app_logs:/var/log/book_rag:ro   # same volume the api container writes into, read-only here
+#       - ./promtail-config.yml:/etc/promtail/config.yml:ro
+#     command: -config.file=/etc/promtail/config.yml
+#     depends_on:
+#       - loki
+
+#   grafana:
+#     image: grafana/grafana:13.0.0
+#     container_name: book_rag_grafana
+#     restart: unless-stopped
+#     ports:
+#       - "3001:3000"   # 3000 is already taken by the frontend, so Grafana is :3001
+#     environment:
+#       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+#     volumes:
+#       - grafana_data:/var/lib/grafana
+#       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+#     depends_on:
+#       - loki
+
+# volumes:
+#   qdrant_storage:
+#   postgres_data:
+#   app_logs:
+#   grafana_data:
+
+#-----development-----
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.17.1
+    container_name: book_rag_qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST API -- what app/config.py's QDRANT_URL points to
+      - "6334:6334"   # gRPC -- not used by this project's client calls, but
+                       # the qdrant-client library can use it, and some tools
+                       # (e.g. the web dashboard) expect it to be reachable
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      # Uncomment to require an API key (recommended if this is ever
+      # reachable from outside localhost). Set the matching value in this
+      # project's .env as QDRANT_API_KEY.
+      # QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      QDRANT__LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  loki:
+    image: grafana/loki:3.7.0
+    container_name: book_rag_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"   # Loki's own API -- not something you query directly day to day,
+                       # but useful for `curl localhost:3100/ready` when debugging
+    command: -config.file=/etc/loki/local-config.yaml
+    # No config file mounted here on purpose: the image ships a sane
+    # single-binary default config at that exact path, fine for this scale.
+
+  promtail:
+    image: grafana/promtail:3.6.11
+    container_name: book_rag_promtail
+    restart: unless-stopped
+    volumes:
+      # Bind mount, not a named volume -- the app is running bare-host
+      # (`uv run python server.py` / the CLI), not in a container, so it
+      # writes to the literal ./logs folder in this project on your real
+      # filesystem. A named volume wouldn't see that at all; this maps
+      # straight to it. If you later containerize the app too, switch
+      # this to the app container's own named volume instead.
+      - ./logs:/var/log/book_rag:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana-oss:13.0.2
+    container_name: book_rag_grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - loki
+
+volumes:
+  qdrant_storage:
+  grafana_data:

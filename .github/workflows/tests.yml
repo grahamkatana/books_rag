@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Apply database migrations
+        run: uv run alembic upgrade head
+
+      - name: Run tests
+        run: |
+          set -e
+          for f in tests/*.py; do
+            echo "=== $f ==="
+            uv run python "$f"
+          done
+
+      # Most tests are fully self-contained (synthetic fixtures, no real
+      # books needed). Two specifically need the actual (copyrighted)
+      # book PDFs used during development -- those are never committed
+      # to this repo, so those two tests detect their absence and print
+      # a [skip] line and exit 0 rather than fail. That's expected here.

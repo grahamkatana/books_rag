@@ -1,0 +1,10 @@
+.venv
+.git
+__pycache__
+*.pyc
+.env
+book_rag.db
+data/chunks/*.jsonl
+data/report.csv
+pdfs/books/*.pdf
+tests
