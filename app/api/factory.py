@@ -47,13 +47,16 @@ def create_app() -> Flask:
     from app.api.v1.ask import blp as ask_blp
     from app.api.v1.auth import blp as auth_blp
     from app.api.v1.admin_users import blp as admin_users_blp
+    from app.api.v1.admin_books import blp as admin_books_blp
+    from app.api.v1.admin_chats import blp as admin_chats_blp
 
     api.register_blueprint(books_blp)
     api.register_blueprint(chats_blp)
     api.register_blueprint(ask_blp)
     api.register_blueprint(auth_blp)
     api.register_blueprint(admin_users_blp)
-
+    api.register_blueprint(admin_books_blp)
+    api.register_blueprint(admin_chats_blp)
     from app.admin.views import register_admin
     register_admin(app)
 
