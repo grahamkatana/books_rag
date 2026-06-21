@@ -10,137 +10,105 @@ user.
 ```
 book_rag/
 ├── .github/workflows/
-│   └── tests.yml                # CI: runs every tests/*.py on push/PR
-├── alembic/                     # migrations (Alembic)
-│   ├── env.py                   # wired to app.config + app.models
-│   └── versions/                # one file per migration, applied in order
+│   └── tests.yml                  # CI: runs every tests/*.py on push/PR
+├── alembic/                       # migrations (Alembic)
+│   ├── env.py                     # wired to app.config + app.models
+│   └── versions/                  # one file per migration, applied in order
 ├── alembic.ini
 ├── app/
-│   ├── config.py                # every setting the app reads, in one place
-│   ├── cli.py                   # `python -m app.cli ...` entrypoint
+│   ├── config.py                  # every setting the app reads, in one place
+│   ├── cli.py                     # `python -m app.cli ...` entrypoint
+│   ├── logging_config.py          # setup_logging()/get_logger() -- console + rotating JSON file
 │   ├── db/
-│   │   └── session.py           # SQLAlchemy engine, get_session(), admin scoped session
+│   │   └── session.py             # SQLAlchemy engine, get_session(), admin scoped session
 │   ├── models/
-│   │   ├── book.py               # Book: bibliographic data for APA citations
-│   │   ├── chat.py               # Chat / Message / Citation: persisted history (Chat has user_id)
-│   │   └── user.py               # User: email/password_hash/is_admin
+│   │   ├── book.py                 # Book: bibliographic data for APA citations
+│   │   ├── chat.py                 # Chat / Message / Citation: persisted history (Chat has user_id)
+│   │   └── user.py                 # User: email/password_hash/is_admin
 │   ├── auth/
-│   │   ├── security.py           # password hashing (werkzeug.security)
-│   │   └── seed_admin.py         # creates the default admin user
+│   │   ├── security.py             # password hashing (werkzeug.security)
+│   │   ├── decorators.py           # admin_required -- real DB lookup, not just a JWT claim
+│   │   ├── seed_admin.py           # creates the default admin user
+│   │   └── create_user.py          # register a new user, or reset an existing one's password
 │   ├── admin/
-│   │   └── views.py              # Flask-Admin panel (Users/Books/Chats), Flask-Login gated
+│   │   └── views.py                # Flask-Admin panel (Users/Books/Chats), Flask-Login gated
 │   ├── ingestion/
-│   │   ├── build_trust_report.py # which books have real page numbers
-│   │   ├── chunk_trusted_books.py# token-chunk books that do
+│   │   ├── build_trust_report.py   # which books have real page numbers
+│   │   ├── chunk_trusted_books.py  # token-chunk books that do
 │   │   ├── chunk_untrusted_books.py# font-size heading detection for books that don't
-│   │   ├── chunk_cache.py        # shared skip-cache logic for both chunkers above
-│   │   ├── seed_books.py         # populate Book table (bibliography)
-│   │   ├── lookup_bibliography.py# auto-fill bibliography via Brave Search + LLM
-│   │   ├── bibliography_utils.py # defensive type coercion for bibliography fields
-│   │   └── embed_upload.py       # embed chunks, upsert into Qdrant
+│   │   ├── chunk_cache.py          # shared skip-cache logic for both chunkers above
+│   │   ├── seed_books.py           # create a Book row (filename-guessed) for any new file
+│   │   ├── lookup_bibliography.py  # auto-fill bibliography via Brave Search + LLM
+│   │   ├── bibliography_utils.py   # defensive type coercion for bibliography fields
+│   │   └── embed_upload.py         # embed chunks, upsert into Qdrant
 │   ├── retrieval/
-│   │   ├── citations.py          # APA formatting + <CITATION> tag handling
-│   │   └── query_engine.py       # embed question -> search -> ask -> persist (per-user)
-│   └── api/                       # HTTP layer -- versioned, OpenAPI-documented
-│       ├── factory.py             # create_app(): Flask + flask-smorest + CORS + JWT + admin
-│       ├── clients.py             # lazy OpenAI/Qdrant client singletons
+│   │   ├── citations.py            # APA formatting + <CITATION> tag handling
+│   │   └── query_engine.py         # embed question -> search -> ask -> persist (per-user)
+│   └── api/                         # HTTP layer -- versioned, OpenAPI-documented
+│       ├── factory.py               # create_app(): Flask + flask-smorest + CORS + JWT + admin + request logging
+│       ├── clients.py                # lazy OpenAI/Qdrant client singletons
 │       └── v1/
-│           ├── schemas.py         # marshmallow request/response schemas
-│           ├── auth_schemas.py    # login/me schemas
-│           ├── serializers.py     # ORM -> dict, before the session closes
-│           ├── books.py           # GET /api/v1/books, /books/<id> (auth required)
-│           ├── chats.py           # GET/DELETE /api/v1/chats, /chats/<id> (scoped to current user)
-│           ├── ask.py             # POST /api/v1/ask, /ask/stream (SSE) (auth required)
-│           └── auth.py            # POST /api/v1/auth/login, GET /api/v1/auth/me
+│           ├── schemas.py            # marshmallow request/response schemas
+│           ├── auth_schemas.py       # login/me schemas
+│           ├── serializers.py        # ORM -> dict, before the session closes
+│           ├── books.py              # GET /api/v1/books, /books/<id> (auth required)
+│           ├── chats.py              # GET/DELETE /api/v1/chats, /chats/<id> (scoped to current user)
+│           ├── ask.py                # POST /api/v1/ask, /ask/stream (SSE) (auth required)
+│           ├── auth.py               # POST /api/v1/auth/login, GET /api/v1/auth/me
+│           ├── admin_users.py        # admin-only user CRUD
+│           ├── admin_books.py        # admin-only bibliography editing
+│           └── admin_chats.py        # admin-only chat moderation, across every user
+├── scripts/
+│   └── extract_isbns.py            # scans pdfs/books/ for ISBNs, writes data/isbns.csv
 ├── data/
-│   ├── report.csv                # generated by build_trust_report
-│   └── chunks/                   # generated by chunk_trusted_books / chunk_untrusted_books
-├── pdfs/books/                   # put your book PDFs here
-├── tests/                        # smoke tests, runnable with no API keys (CI runs all of these)
-├── frontend/                      # React + Tailwind chat UI (separate npm project)
-│   ├── Dockerfile                 # multi-stage: npm build -> nginx serves the static output
-│   ├── nginx.conf                 # serves the SPA, proxies /api/ to the api container
+│   ├── report.csv                  # generated by build_trust_report
+│   ├── isbns.csv                    # generated by scripts/extract_isbns.py (optional, not part of the pipeline)
+│   └── chunks/                      # generated by chunk_trusted_books / chunk_untrusted_books
+├── logs/
+│   └── app.log                     # generated by app/logging_config.py (rotates: app.log.1, .2, ...)
+├── pdfs/books/                     # put your book PDFs here
+├── tests/                          # smoke tests, runnable with no API keys (CI runs all of these)
+├── frontend/                        # React + Tailwind chat UI (separate npm project)
+│   ├── Dockerfile                   # multi-stage: npm build -> nginx serves the static output
+│   ├── nginx.conf                   # serves the SPA, proxies /api/ to the api container
 │   └── src/
-│       ├── App.jsx                 # auth gate: shows Login or ChatApp
-│       ├── ChatApp.jsx              # the main chat UI (what App.jsx used to be, pre-auth)
-│       ├── api/client.js           # REST calls, JWT storage, manual SSE stream parsing
-│       ├── lib/utils.js            # cn() -- clsx + tailwind-merge, shadcn's signature helper
+│       ├── App.jsx                   # auth gate: shows Login or ChatApp
+│       ├── ChatApp.jsx                # the main chat UI (what App.jsx used to be, pre-auth)
+│       ├── api/client.js             # REST calls, JWT storage, manual SSE stream parsing
+│       ├── lib/utils.js              # cn() -- clsx + tailwind-merge, shadcn's signature helper
 │       ├── components/
-│       │   ├── ui/                 # Button, Badge, Popover, Checkbox, DropdownMenu (shadcn-style)
-│       │   ├── Login.jsx            # email/password login screen
-│       │   ├── MultiSelect.jsx      # Popover+Checkbox+Badge multi-book scope selector
-│       │   └── ...                 # Sidebar, ChatWindow, MessageBubble, CitationPanel
-├── docker-compose.yml            # qdrant + postgres + api + frontend, all four together
-├── Dockerfile                     # builds the API image (gunicorn inside)
-├── docker-entrypoint.sh           # runs migrations, seeds the default admin, starts gunicorn
-├── server.py                     # bare-host API entrypoint (waitress)
-├── ingest.py                      # single-command data ingestion (report -> seed-books -> ... -> embed)
-├── book_rag.db                   # SQLite file (created by `alembic upgrade head`) -- bare-host only
-├── pyproject.toml                # dependencies (managed with uv, not pip)
-├── uv.lock                       # locked, reproducible dependency versions
+│       │   ├── ui/                   # Button, Badge, Popover, Checkbox, DropdownMenu (shadcn-style)
+│       │   ├── Login.jsx              # email/password login screen
+│       │   ├── MultiSelect.jsx        # Popover+Checkbox+Badge multi-book scope selector
+│       │   └── ...                   # Sidebar, ChatWindow, MessageBubble, CitationPanel
+├── docker-compose.yml              # qdrant + postgres + api + frontend + loki + promtail + grafana
+├── promtail-config.yml             # tails logs/app.log, ships to loki
+├── grafana-datasources.yml         # auto-provisions Loki as a Grafana datasource on first boot
+├── Dockerfile                      # builds the API image (gunicorn inside)
+├── docker-entrypoint.sh            # runs migrations, seeds the default admin, starts gunicorn
+├── server.py                       # bare-host API entrypoint (waitress)
+├── ingest.py                       # single-command data ingestion (report -> seed-books -> ... -> embed)
+├── dev_up.py                       # starts the API + main frontend + admin app together, bare-host
+├── migrate_to_cloud.py             # sqlite-to-postgres and qdrant-to-cloud one-off migrations
+├── book_rag.db                     # SQLite file (created by `alembic upgrade head`) -- bare-host only
+├── pyproject.toml                  # dependencies (managed with uv, not pip)
+├── uv.lock                         # locked, reproducible dependency versions
 └── .env.example
 ```
 
-## PDF text-extraction robustness
-
-Some PDFs -- particularly math-heavy ones -- have fonts whose embedded
-character maps `pypdf` mis-decodes, occasionally producing a lone UTF-16
-surrogate codepoint instead of the real character (most often an italic
-math variable from the Mathematical Alphanumeric Symbols block). A lone
-surrogate isn't valid standalone Unicode and used to crash the whole
-chunking pipeline with `UnicodeEncodeError: surrogates not allowed` the
-moment it tried to UTF-8 encode that page's text -- over one bad
-character in one book, taking down the whole run. Both chunkers now
-sanitize extracted text immediately (`sanitize_text()` in
-`chunk_trusted_books.py`, shared by `chunk_untrusted_books.py`), silently
-dropping any lone surrogate rather than crashing. There's no "correct"
-character to recover in its place, since the source extraction was
-already broken for whatever symbol it represented -- a math-heavy book
-hitting this may have a handful of individual symbols silently missing
-from its chunked text, which is a real, accepted limitation rather than
-a fully-solved problem.
-
-## Untrusted books (no real page numbers)
-
-Books with no embedded `/PageLabels` (per `build_trust_report`) go through
-`app/ingestion/chunk_untrusted_books.py` instead of the trusted-book
-chunker, using font size to detect chapter/section headings rather than
-relying on page numbers that don't exist. `chunk` runs both pipelines
-automatically -- you don't need to know which books are which before
-running it.
-
-Heading detection is auto-calibrated per book rather than hardcoded to one
-book's font sizes: it samples sizes across the book to find the body-text
-size (the most common one), then treats a line whose average size is at
-least 10% larger (`HEADING_SIZE_RATIO`) as a heading. This is a heuristic,
-not Docling's real layout-model detection, and it has known, accepted
-limitations worth knowing about before trusting it blindly:
-
-- Cover/title pages can produce a false-positive "heading" from large
-  title text before any real content starts (self-corrects once the
-  first real chapter heading appears).
-- Table-of-contents pages can briefly register one of their own listed
-  entries as the "current heading" while the TOC itself is being chunked
-  -- low-impact in practice, since TOC text is unlikely to be the most
-  relevant retrieval match for a real question, but worth knowing about.
-- If a book's headings aren't at least ~10% larger than its body text,
-  detection may find few or no headings at all -- `chunk` prints an
-  explicit warning when this happens rather than silently producing
-  chapter=None citations for an entire book.
-
-Citations for these books read like `(Author, Year, "Section Name"
-section, approx. PDF p.N)` rather than a real page number -- this is the
-"approximate" mode from the Multiple editions section below, just
-triggered by missing page labels instead of an unpreferred edition.
+A second, separate project -- a standalone admin SPA -- typically sits as
+a sibling folder (`admin/` by default, per `dev_up.py`'s `--admin-path`).
+It's deliberately not part of this repo; see "Standalone admin app"
+below for what it is and why it's kept separate.
 
 ## Setup
 
 ```bash
 uv sync                # creates .venv and installs everything from uv.lock
 cp .env.example .env    # fill in OPENAI_API_KEY at minimum
-docker compose up -d --build   # starts Qdrant, Postgres, the API, and the frontend together
-uv run alembic upgrade head    # only needed for bare-host use -- the api container runs this itself
-uv run python -m app.auth.seed_admin   # only needed for bare-host use -- the api container does this itself too
+docker compose up -d --build   # starts Qdrant, Postgres, the API, the frontend, and the logging stack
+uv run alembic upgrade head             # only needed for bare-host use -- the api container runs this itself
+uv run python -m app.auth.seed_admin    # only needed for bare-host use -- the api container does this itself too
 ```
 
 `uv` manages the virtual environment for you -- no manual `venv`/`pip install`
@@ -149,10 +117,11 @@ locked, reproducible dependency set in `uv.lock` rather than whatever
 happens to be on your system Python. Adding a new dependency later is
 `uv add <package>`, which updates both `pyproject.toml` and `uv.lock`.
 
-`docker compose up -d --build` is genuinely the whole stack now: Qdrant
-on `:6333`, Postgres on `:5432`, the API on `:8000`, and the frontend on
-`:3000`. Open `http://localhost:3000` and log in with the admin
-credentials printed in the `api` container's logs on first boot --
+`docker compose up -d --build` is the whole stack: Qdrant on `:6333`,
+Postgres on `:5432`, the API on `:8000`, the frontend on `:3000`, and the
+logging stack (Loki `:3100`, Grafana `:3001`) -- see "Logging &
+observability" below. Open `http://localhost:3000` and log in with the
+admin credentials printed in the `api` container's logs on first boot --
 **`docker compose logs api | grep -A3 "admin user"`** to find them if
 you missed them scrolling by. See "Authentication & the admin panel"
 below for the full picture, including why you should rotate that
@@ -164,6 +133,11 @@ To require an API key on Qdrant itself (recommended if it's ever
 reachable beyond localhost), uncomment the `QDRANT__SERVICE__API_KEY`
 line in `docker-compose.yml` and set the same value as `QDRANT_API_KEY`
 in `.env`, then rebuild.
+
+**Prefer running everything bare-host instead of in containers?**
+`uv run python dev_up.py` starts the API, the main frontend, and the
+admin app together as plain local processes (no Docker at all), with
+one Ctrl+C stopping all three cleanly. See "Bare-host development" below.
 
 ## Pipeline order
 
@@ -215,10 +189,137 @@ answer is saved to whichever database `DATABASE_URL` points to (SQLite
 by default, Postgres if you've set it that way) regardless.
 
 If you have more than one edition of the same book, give them a shared
-`work_key` in `/admin` (see the section below) -- once that's set, `ask`
-automatically searches only the preferred (normally latest) edition
-unless you pass `--all-editions` or `--source` to target a specific file
-directly.
+`work_key` in `/admin` (see "Multiple editions" below) -- once that's
+set, `ask` automatically searches only the preferred (normally latest)
+edition unless you pass `--all-editions` or `--source` to target a
+specific file directly.
+
+## PDF text-extraction robustness
+
+Some PDFs -- particularly math-heavy ones -- have fonts whose embedded
+character maps `pypdf` mis-decodes, occasionally producing a lone UTF-16
+surrogate codepoint instead of the real character (most often an italic
+math variable from the Mathematical Alphanumeric Symbols block). A lone
+surrogate isn't valid standalone Unicode and used to crash the whole
+chunking pipeline with `UnicodeEncodeError: surrogates not allowed` the
+moment it tried to UTF-8 encode that page's text -- over one bad
+character in one book, taking down the whole run. Both chunkers now
+sanitize extracted text immediately (`sanitize_text()` in
+`chunk_trusted_books.py`, shared by `chunk_untrusted_books.py`), silently
+dropping any lone surrogate rather than crashing. There's no "correct"
+character to recover in its place, since the source extraction was
+already broken for whatever symbol it represented -- a math-heavy book
+hitting this may have a handful of individual symbols silently missing
+from its chunked text, which is a real, accepted limitation rather than
+a fully-solved problem.
+
+A second, unrelated extraction edge case: a book's actual text can
+contain a literal string that looks like one of `tiktoken`'s reserved
+special tokens (`<|endoftext|>` is the common one), which by default
+makes `tiktoken` refuse to encode it at all (`disallowed_special`
+error). Both chunkers' `encoder.encode(...)` calls pass
+`disallowed_special=()` for this reason -- treat any such text as plain
+content, not a control token, since in a book's prose that's exactly
+what it is.
+
+## Untrusted books (no real page numbers)
+
+Books with no embedded `/PageLabels` (per `build_trust_report`) go through
+`app/ingestion/chunk_untrusted_books.py` instead of the trusted-book
+chunker, using font size to detect chapter/section headings rather than
+relying on page numbers that don't exist. `chunk` runs both pipelines
+automatically -- you don't need to know which books are which before
+running it.
+
+Heading detection is auto-calibrated per book rather than hardcoded to one
+book's font sizes: it samples sizes across the book to find the body-text
+size (the most common one), then treats a line whose average size is at
+least 10% larger (`HEADING_SIZE_RATIO`) as a heading. This is a heuristic,
+not Docling's real layout-model detection, and it has known, accepted
+limitations worth knowing about before trusting it blindly:
+
+- Cover/title pages can produce a false-positive "heading" from large
+  title text before any real content starts (self-corrects once the
+  first real chapter heading appears).
+- Table-of-contents pages can briefly register one of their own listed
+  entries as the "current heading" while the TOC itself is being chunked
+  -- low-impact in practice, since TOC text is unlikely to be the most
+  relevant retrieval match for a real question, but worth knowing about.
+- If a book's headings aren't at least ~10% larger than its body text,
+  detection may find few or no headings at all -- `chunk` prints an
+  explicit warning when this happens rather than silently producing
+  chapter=None citations for an entire book.
+
+Citations for these books read like `(Author, Year, "Section Name"
+section, approx. PDF p.N)` rather than a real page number -- this is the
+"approximate" mode from the "Multiple editions" section below, just
+triggered by missing page labels instead of an unpreferred edition.
+
+## Bibliographic data: Brave + LLM, straight into the database
+
+PDFs don't reliably expose author/publisher/year. `seed-books` gives a
+new book a placeholder bibliography guessed from its filename (good
+enough to exist and be queryable, not good enough to cite), then
+`lookup-bibliography` improves it: searches Brave for the book, hands
+the results to an LLM to extract structured title/authors/year/publisher/
+edition, and writes that straight into the book's row in the database --
+`bibliography_source="auto_lookup"` and a `lookup_confidence` field
+("high"/"medium"/"low", the LLM's own judgment of how consistent the
+search results were). There's no intermediate file anywhere in this --
+earlier versions of this project staged everything through a
+`book_overrides.json`, which turned out to be exactly the kind of manual
+busywork the auto-lookup step was supposed to replace, so it's gone.
+
+This is a much better starting point than the filename guess, but it's
+still an LLM reading web snippets, not a guarantee -- review a book
+against its real copyright page before fully trusting it for citations,
+the same as any `bibliography_verified=False` row. The fastest way to do
+that is directly in `/admin` (or the equivalent REST endpoint -- see
+"Admin REST API" below): edit the fields, save, and it's automatically
+marked verified with `bibliography_source="manual"` -- no JSON, no
+rerunning anything. Without `BRAVE_API_KEY` configured,
+`lookup-bibliography` just skips itself with a clear message; the
+pipeline still completes, books just keep their filename-guessed
+metadata until you either set that key or fix them by hand.
+
+Neither step ever clobbers data someone's already vouched for:
+`seed-books` only creates rows for books it's never seen before, never
+touching an existing one regardless of where its data came from;
+`lookup-bibliography` skips anything already `bibliography_verified=True`
+and (by default) anything already `bibliography_source="auto_lookup"`
+too, unless you pass `--force` to redo those specifically. A manual edit
+(through `/admin` or the REST API) is the one thing `--force` can never
+touch -- it isn't in `lookup-bibliography`'s query at all once
+`bibliography_verified=True`.
+
+**Finding ISBNs to cross-reference against.** `scripts/extract_isbns.py`
+is a standalone, read-only tool -- not part of the pipeline above, and
+doesn't touch the database -- that scans every PDF for ISBNs and writes
+`file_name, isbn_13, isbn_10, all_isbns_found, pages_scanned, error` to
+`data/isbns.csv`:
+
+```bash
+uv run python scripts/extract_isbns.py
+uv run python scripts/extract_isbns.py --front 40 --back 15   # wider page window
+uv run python scripts/extract_isbns.py --full                  # scan every page instead
+```
+
+By default it only scans the first 30 + last 10 pages of each PDF (an
+ISBN is almost always on the copyright page near the front, occasionally
+a colophon near the back, essentially never in the middle of a 600-page
+book) -- `--full` scans everything if you have a reason to. A regex match
+alone isn't trusted: every candidate is verified against the real
+ISBN-10/ISBN-13 checksum algorithm before being accepted, so a random
+10-13 digit run elsewhere in the text (a page range, a phone number)
+doesn't get misreported as a real ISBN. A corrupted or unreadable PDF
+gets its own row with an `error` message rather than crashing the whole
+batch. Once you have real ISBNs, **Open Library**
+(`https://openlibrary.org/api/books?bibkeys=ISBN:<isbn>&format=json&jscmd=data`,
+no API key needed at all) and the **Google Books API**
+(`https://www.googleapis.com/books/v1/volumes?q=isbn:<isbn>`, no key
+needed for low-volume use) are both genuinely free ways to cross-check
+what Brave/the LLM found, or to look a book up directly if you'd rather
+not wait on a Brave search.
 
 ## HTTP API
 
@@ -239,23 +340,23 @@ Linux, and macOS, which matters when running directly on a Windows host.
 docker compose up -d --build
 ```
 This builds the API into its own image (see `Dockerfile`) and runs it as
-a second service next to `qdrant` in `docker-compose.yml`. Since this
-runs inside a Linux container regardless of your host OS, `gunicorn`'s
-Windows limitation doesn't apply here at all -- the container is Linux,
-full stop. `docker-entrypoint.sh` runs `alembic upgrade head` before
-starting `gunicorn` (with `gthread` workers, sized for the kind of
-blocking I/O this app does -- waiting on OpenAI and Qdrant) so the schema
-is always current on container start.
+a service in `docker-compose.yml`. Since this runs inside a Linux
+container regardless of your host OS, `gunicorn`'s Windows limitation
+doesn't apply here at all -- the container is Linux, full stop.
+`docker-entrypoint.sh` runs `alembic upgrade head` and seeds the default
+admin before starting `gunicorn` (with `gthread` workers, sized for the
+kind of blocking I/O this app does -- waiting on OpenAI and Qdrant) so
+the schema is always current on container start.
 
 One networking detail worth understanding rather than copying blindly:
 inside the Docker Compose network, the API container reaches Qdrant at
 `http://qdrant:6333` (Docker's embedded DNS resolves the service name),
 not `http://localhost:6333` -- from inside a container, "localhost" means
-that container itself. `docker-compose.yml` overrides `QDRANT_URL` for
-the `api` service specifically for this reason; `.env` keeps
-`QDRANT_URL=http://localhost:6333` unchanged for when you run ingestion
-commands or `server.py` directly on the host, where that's correct
-because of the port mapping.
+that container itself. `docker-compose.yml` overrides `QDRANT_URL` (and
+`DATABASE_URL`, to point at the `postgres` service) for the `api` service
+specifically for this reason; `.env` keeps `QDRANT_URL=http://localhost:6333`
+unchanged for when you run ingestion commands or `server.py` directly on
+the host, where that's correct because of the port mapping.
 
 Either way, Swagger UI is at `http://localhost:8000/swagger-ui` (or
 whatever port you chose), the raw OpenAPI spec at `/api-spec.json`. Every
@@ -278,6 +379,10 @@ on everything else. See "Authentication & the admin panel" below.
 | `/api/v1/chats/<id>` | DELETE | required | Delete one of *your* chats and its messages |
 | `/api/v1/ask/` | POST | required | Ask a question, get the full answer back in one response |
 | `/api/v1/ask/stream` | POST | required | Same, but streamed as Server-Sent Events |
+
+See "Admin REST API" below for the `/api/v1/admin/...` endpoints --
+listed separately since they all additionally require `is_admin=True`,
+not just a valid login.
 
 Chats are scoped to whichever user's token made the request -- one
 user can never see, continue, or delete another user's chat (a
@@ -342,6 +447,15 @@ clients -- one's an API consumer that should be stateless, the other's a
 traditional server-rendered page that benefits from a normal browser
 session.
 
+`admin_required` (`app/auth/decorators.py`, used by every
+`/api/v1/admin/...` endpoint) re-checks `is_admin` against the database
+on every request, rather than trusting the `is_admin` claim baked into
+the JWT at login time. That distinction matters: a JWT's claims are
+fixed at issue time, so a claims-only check would mean a revoked admin's
+*existing, still-unexpired* token kept working as an admin token until
+it naturally expired. The DB lookup means revocation takes effect on the
+very next request instead.
+
 **Default admin user.** `app/auth/seed_admin.py` creates one admin user
 the first time it runs (idempotent -- does nothing if an admin already
 exists), with a cryptographically random 20-character password generated
@@ -349,6 +463,7 @@ via Python's `secrets` module, printed once to stdout:
 
 ```bash
 uv run python -m app.auth.seed_admin
+uv run python -m app.auth.seed_admin --email you@example.com   # seed a different address
 ```
 
 The Docker path runs this automatically on every container start
@@ -358,17 +473,32 @@ console output; it is never stored anywhere in plaintext, including by
 this script itself. **Capture it immediately** (`docker compose logs api`
 if you missed it scrolling by) and rotate it once you've logged in --
 the entire point of a randomly generated, never-repeated password is
-defeated if it ends up sitting around forever. Add `--email` to seed a
-different address: `uv run python -m app.auth.seed_admin --email you@example.com`.
+defeated if it ends up sitting around forever.
+
+**Creating additional users.** `app/auth/create_user.py` is the general
+tool -- `seed_admin.py` deliberately refuses to run at all once any admin
+exists, so it's not a repeatable "add a user" command:
+
+```bash
+uv run python -m app.auth.create_user --email someone@example.com --password "their password"
+uv run python -m app.auth.create_user --email someone@example.com --admin
+    # no --password: generates a strong random one and prints it once, same as seed_admin
+uv run python -m app.auth.create_user --email someone@example.com --password "new password" --update
+    # the user already exists: reset their password (and --admin status) instead of erroring
+```
+
+Without `--update`, trying to create a user whose email already exists
+just refuses and tells you to pass `--update` -- it never silently
+overwrites an existing account.
 
 **The admin panel** (`/admin`, gated to `is_admin=True` users) gives you
 Users (create/edit, including setting a password through a proper
 `PasswordField` that gets hashed on save, never stored or shown in
-plaintext), Books (edit bibliography directly -- the only correction
-path now that there's no JSON file at all: a quick edit here writes
-straight to the database and is automatically marked
-`bibliography_verified=True` with `bibliography_source="manual"`), and
-Chats (view-only, for moderation).
+plaintext), Books (edit bibliography directly -- a quick edit here
+writes straight to the database and is automatically marked
+`bibliography_verified=True` with `bibliography_source="manual"`; no
+delete here on purpose, see "Admin REST API" below for why), and Chats
+(view-only, for moderation).
 
 **Secrets.** `.env.example` ships obviously-fake default values for
 `JWT_SECRET_KEY` and `SECRET_KEY` -- fine for local dev, not for anything
@@ -377,6 +507,185 @@ beyond your own machine:
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
+
+## Admin REST API
+
+The same admin operations the `/admin` panel offers, as JSON endpoints
+under `/api/v1/admin/...` -- built specifically so a real frontend (see
+"Standalone admin app" below) can drive admin actions without needing to
+be a server-rendered page itself. Every endpoint here requires
+`admin_required`, on top of the normal `Authorization: Bearer <token>`.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/admin/users/` | GET | List every user |
+| `/api/v1/admin/users/` | POST | Register a new user |
+| `/api/v1/admin/users/<id>` | GET | Get one user |
+| `/api/v1/admin/users/<id>` | PUT | Update a user (any field optional) |
+| `/api/v1/admin/users/<id>` | DELETE | Delete a user |
+| `/api/v1/admin/books/` | GET | List every book |
+| `/api/v1/admin/books/<id>` | GET | Get one book |
+| `/api/v1/admin/books/<id>` | PUT | Update a book's bibliography |
+| `/api/v1/admin/chats/` | GET | List every chat, **across every user**, with the owner's email attached |
+| `/api/v1/admin/chats/<id>` | GET | Full message history for any chat, regardless of owner |
+| `/api/v1/admin/chats/<id>` | DELETE | Delete any chat, regardless of owner |
+
+Two safety rules are enforced server-side, not just hinted at in a UI:
+you can never delete or demote the *last* remaining admin (a permanent
+lockout otherwise, with no recovery path short of editing the database
+directly), and you can't delete your own account while logged in as it,
+even when other admins exist. A duplicate email on user create/update
+comes back as a clean 409, not a raw database-constraint crash.
+
+There's deliberately **no DELETE for books**. A `Book` row has real
+Qdrant vectors and a `data/chunks/<source_key>.jsonl` file associated
+with it that nothing in this project currently cleans up -- deleting
+just the database row would leave those chunks orphaned, still
+searchable, with no `Book` left to resolve their citation against. The
+`/admin` panel's `BookAdminView` has the same restriction
+(`can_delete = False`) for the same reason. A real "remove a book"
+operation means deleting its Qdrant points, its chunk file, and the row
+together, atomically -- not built yet.
+
+Editing a book through this API marks it `bibliography_verified=True`
+and `bibliography_source="manual"` automatically, same as the `/admin`
+panel -- a manual edit is, definitionally, a human having looked at it.
+`source_key` and `page_mode` aren't editable through this endpoint: the
+former is the join key against Qdrant's chunk payloads, the latter
+reflects how the PDF was actually chunked -- neither is "bibliography,"
+they're structural facts about the ingested file.
+
+## Standalone admin app
+
+A separate React + Vite SPA, deliberately **not part of this repo** --
+own `git` history, own `package.json`, own deployment, consuming the
+`/api/v1/admin/...` endpoints above. Built on the same actual shadcn/ui
+architecture as the main frontend (real Radix UI primitives, `cva`, the
+`cn()` utility, the same HSL CSS-variable theming), not a visual
+approximation of it.
+
+What it has: a JWT login screen (against `/api/v1/auth/login`, the same
+endpoint the main frontend uses -- not `/admin`'s session-based login),
+and three pages mirroring the REST API one-to-one -- Users (list,
+create, edit including a password reset, delete), Books (list, edit
+bibliography -- no delete, matching the API's own restriction), and
+Chats (list across every user with their email shown, view full message
+history, delete). Every page has client-side search and pagination
+(`useSearchAndPaginate`) -- the admin endpoints return everything in one
+response with no server-side paging support, so this filters and slices
+in the browser; fine for the data volumes an admin tool deals with, and
+the real fix if a deployment's counts ever get large enough for that to
+matter is server-side query params, not a smarter client-side hook.
+
+It surfaces the backend's own safety messages as-is (the last-admin and
+self-delete protections, the duplicate-email 409) rather than
+re-implementing those rules client-side -- the API is the source of
+truth for what's allowed, the frontend just displays whatever it says.
+
+It ships its own multi-stage `Dockerfile` (Node build -> nginx serves
+the static output) and `nginx.conf` (SPA fallback + `/api/` proxied to a
+service literally named `api` on the same Docker network -- edit that
+file if your API service has a different name). To run it alongside
+this project's own `docker-compose.yml`, drop the folder in (commonly as
+`admin/`, which is `dev_up.py`'s default expectation -- see below) and
+add a service block pointing at its own `Dockerfile`, depending on
+`api`, on whatever port isn't already taken (`:3000` is the main
+frontend, `:3001` is Grafana if you've set that up).
+
+## Bare-host development
+
+`uv run python dev_up.py` starts the API (`server.py`), the main
+frontend, and the admin app together as three plain local processes --
+no Docker at all -- with one Ctrl+C stopping all three cleanly. Each
+service's output is prefixed and colorized (`[api]`, `[frontend]`,
+`[admin]`) so interleaved logs from all three stay distinguishable in
+one terminal.
+
+```bash
+uv run python dev_up.py
+uv run python dev_up.py --admin-path ../book_rag_admin   # if the admin app lives somewhere other than ./admin
+uv run python dev_up.py --skip-admin                       # just the API + main frontend
+uv run python dev_up.py --skip-frontend                     # just the API + admin app
+```
+
+Written as a Python script rather than a shell script specifically so it
+runs the same way on Windows as on Linux/macOS. If one service dies on
+its own (a real crash, not Ctrl+C), the script stops every other service
+too, rather than leaving a frontend pointed at a server that's no longer
+running. On Windows, stopping a service uses `taskkill /F /T` -- killing
+the *whole* process tree, not just the immediate process -- since
+`npm run dev` spawns child Node processes that a plain terminate of the
+parent can leave orphaned, still holding the dev server's port open.
+
+## Logging & observability
+
+`app/logging_config.py`'s `setup_logging()` is called once by every
+entrypoint (`app/cli.py`'s `main()`, `app/api/factory.py`'s
+`create_app()`) -- safe to call more than once, it no-ops after the
+first call rather than registering duplicate handlers (which would log
+every line twice). Two outputs: plain text to stdout (for
+`docker compose logs` or a local terminal), and structured JSON to a
+rotating file at `logs/app.log` -- JSON specifically because a log
+aggregator like Loki/Grafana can filter and query structured fields
+(level, logger name, and whatever you pass via `extra={...}`) far more
+usefully than parsing freeform text lines.
+
+Rotation is size-based (`LOG_MAX_BYTES`, default 10MB) -- once `app.log`
+exceeds that, it's rolled to `app.log.1` (pushing `.1`->`.2`, etc.) and a
+fresh `app.log` starts; `LOG_BACKUP_COUNT` (default 5) old files are
+kept beyond the current one, anything older is deleted automatically.
+This bounds disk usage regardless of how much log volume the app
+produces, which a purely time-based rotation wouldn't guarantee on its
+own.
+
+Use it anywhere in the codebase the same way you'd use the standard
+library, because it is the standard library, just centrally configured:
+```python
+from app.logging_config import get_logger
+logger = get_logger(__name__)
+
+logger.info("Processing %s ...", file_name)
+```
+Use `%s`-style placeholders, not f-strings, inside the call -- the
+logging module only formats the string if that level is actually
+enabled, an f-string builds the full string unconditionally either way.
+You never need to call `setup_logging()` yourself outside the two
+entrypoints above.
+
+Every API request is logged automatically, with no manual instrumentation
+needed in individual endpoints: `app/api/factory.py` registers a
+`before_request`/`after_request` hook that logs `method`, `path`,
+`status`, and `duration_ms` as real structured JSON fields on every
+single call.
+
+**Exposing logs to Grafana.** `docker-compose.yml` includes `loki`,
+`promtail`, and `grafana` services. `promtail-config.yml` tails
+`logs/app.log` and ships it to Loki; `grafana-datasources.yml`
+auto-registers Loki as a Grafana datasource on first boot, so there's no
+manual setup through the UI. Bring it up with the rest of the stack
+(`docker compose up -d --build`), then open `http://localhost:3001`,
+log in (`admin` / whatever you set `GRAFANA_ADMIN_PASSWORD` to in
+`.env`), go to **Explore**, and query `{job="book_rag_api"}` -- or
+`{job="book_rag_api"} | json | status >= 400` to filter straight to
+errors, which is exactly what the structured fields were for.
+
+One thing worth knowing if you're running the app bare-host rather than
+containerized: Promtail's volume mount needs to point at wherever
+`logs/app.log` actually is on your real filesystem (a bind mount, e.g.
+`./logs:/var/log/book_rag:ro`), not a Docker-managed named volume --
+a named volume is internal to Docker and wouldn't see a file a bare-host
+process wrote outside of it. If you containerize the API too, switch
+that mount to the API container's own log volume instead.
+
+One honest caveat about the tools themselves, not this project's setup
+of them: Grafana's own documentation describes Promtail as
+feature-complete/maintenance-mode, with **Grafana Alloy** as the
+actively-developed replacement for log collection going forward.
+Promtail was used here anyway because its config is dramatically simpler
+to read and reason about for a first pass, and it's still fully
+functional -- just know that if you hit a Promtail-specific limitation
+later, the current answer from Grafana is "migrate to Alloy," not "wait
+for a fix."
 
 ## Database: SQLite or PostgreSQL
 
@@ -388,7 +697,13 @@ the exact same Alembic migrations -- every migration in this project has
 been verified against a real local Postgres instance during development,
 not just SQLite, including the constraint-naming convention
 (`app/models/base.py`) that SQLite's batch-alter mode needs and Postgres
-simply ignores since it doesn't need the workaround.
+simply ignores since it doesn't need the workaround. Every migration
+that adds a `NOT NULL` column also sets a `server_default` for the
+`ALTER TABLE` itself (then drops it immediately after, since the model's
+Python-level `default=` handles every future insert) -- without this, a
+fresh install's empty tables would hide a bug that only bites on a real
+upgrade against a database that already has rows in it, which is
+genuinely the more common case once this is actually in use.
 
 `docker-compose.yml`'s `postgres` service uses `POSTGRES_PASSWORD` from
 `.env` (defaults to `book_rag_dev_password` if unset -- change this
@@ -398,6 +713,35 @@ bare-host `uv run` command at that same Postgres instance instead of
 SQLite (it's exposed on `localhost:5432` for exactly this), set
 `DATABASE_URL=postgresql+psycopg://book_rag:<password>@localhost:5432/book_rag`
 in your shell or `.env`.
+
+**Moving an existing SQLite database to Postgres, or a local Qdrant
+collection to a hosted one** (e.g. Qdrant Cloud): `migrate_to_cloud.py`
+at the project root handles both, as two subcommands.
+
+```bash
+# 1. Create the schema on the destination first -- this only copies rows, not schema:
+DATABASE_URL=postgresql+psycopg://user:pass@host:5432/dbname uv run alembic upgrade head
+
+# 2. Then copy the data, in FK-safe order (users -> books -> chats -> messages -> citations):
+uv run python migrate_to_cloud.py sqlite-to-postgres \
+    --sqlite-path book_rag.db \
+    --postgres-url postgresql+psycopg://user:pass@host:5432/dbname
+
+# Vectors, e.g. local Qdrant -> Qdrant Cloud:
+uv run python migrate_to_cloud.py qdrant-to-cloud \
+    --source-url http://localhost:6333 \
+    --dest-url https://xxxxx.cloud.qdrant.io:6333 \
+    --dest-api-key YOUR_CLOUD_API_KEY
+```
+
+The SQLite-to-Postgres path resets Postgres's identity sequences after
+copying (`setval(...)`) -- without this, Postgres's auto-increment has
+no idea rows were just inserted with explicit ids, and the very next
+*normal* insert (no explicit id given) would collide with one of the
+migrated rows. The Qdrant path uses `qdrant_client`'s own official
+`migrate()` helper, not a hand-rolled scroll/upsert loop, so collection
+creation and batched copying of vectors + payloads are both handled
+correctly already.
 
 ## Continuous integration
 
@@ -411,43 +755,6 @@ correctly never committed to this repo (copyright). Those two detect
 their PDF's absence, print a `[skip]` line, and exit 0 rather than fail
 -- that's expected in CI, not a bug; run them locally with the real
 files present for full coverage.
-
-
-
-## Bibliographic data: Brave + LLM, straight into the database
-
-PDFs don't reliably expose author/publisher/year. `seed-books` gives a
-new book a placeholder bibliography guessed from its filename (good
-enough to exist and be queryable, not good enough to cite), then
-`lookup-bibliography` improves it: searches Brave for the book, hands
-the results to an LLM to extract structured title/authors/year/publisher/
-edition, and writes that straight into the book's row in the database --
-`bibliography_source="auto_lookup"` and a `lookup_confidence` field
-("high"/"medium"/"low", the LLM's own judgment of how consistent the
-search results were). There's no intermediate file anywhere in this --
-earlier versions of this project staged everything through a
-`book_overrides.json`, which turned out to be exactly the kind of manual
-busywork the auto-lookup step was supposed to replace, so it's gone.
-
-This is a much better starting point than the filename guess, but it's
-still an LLM reading web snippets, not a guarantee -- review a book
-against its real copyright page before fully trusting it for citations,
-the same as any `bibliography_verified=False` row. The fastest way to do
-that is directly in `/admin`: edit the fields, save, and it's
-automatically marked verified with `bibliography_source="manual"` --
-no JSON, no rerunning anything. Without `BRAVE_API_KEY` configured,
-`lookup-bibliography` just skips itself with a clear message; the
-pipeline still completes, books just keep their filename-guessed
-metadata until you either set that key or fix them by hand.
-
-Neither step ever clobbers data someone's already vouched for:
-`seed-books` only creates rows for books it's never seen before, never
-touching an existing one regardless of where its data came from;
-`lookup-bibliography` skips anything already `bibliography_verified=True`
-and (by default) anything already `bibliography_source="auto_lookup"`
-too, unless you pass `--force` to redo those specifically. A manual
-`/admin` edit is the one thing `--force` can never touch -- it isn't in
-`lookup-bibliography`'s query at all once `bibliography_verified=True`.
 
 ## Frontend
 
@@ -560,6 +867,11 @@ uv run alembic revision --autogenerate -m "describe the change"
 uv run alembic upgrade head
 ```
 
+If the new column is `nullable=False`, check the generated migration
+adds a `server_default` for the `ALTER TABLE` step (and drops it again
+right after) -- see "Database: SQLite or PostgreSQL" above for why this
+matters in practice, not just in theory.
+
 ## Multiple editions of the same book
 
 If your library has more than one edition of the same title, give both
@@ -590,21 +902,3 @@ wins, even if one of them is the non-preferred edition). In-text
 citations already disambiguate by year on their own (`Sommerville, 2011`
 vs `Sommerville, 2006`), so this is really about controlling *what gets
 retrieved*, not citation format.
-
-## Not built yet: research papers (DOIs, pydantic-ai agents)
-
-This system is books-only right now. Research papers are a genuinely
-different ingestion problem -- they have DOIs and structured metadata
-available from real APIs (Crossref, arXiv, Semantic Scholar) instead of
-filename-guessing or web-search-and-extract, usually need different
-chunking (abstract/sections/references rather than chapters), and the
-retrieval/synthesis side benefits from an actual agent framework
-(pydantic-ai was specifically the plan) rather than the single
-retrieve-then-generate call this project uses for books. Worth its own
-properly scoped pass rather than bolting onto the book pipeline --
-flagging it here so it doesn't get lost, not because any of it exists yet.
-
-# Creating new users
-uv run python -m app.auth.create_user --email someone@gmail.com --password "123456789"
-uv run python -m app.auth.create_user --email someone@example.com --admin   # no password = generates a strong random one, printed once
-uv run python -m app.auth.create_user --email someone@example.com --password "new password" --update   # resets an existing user's password
