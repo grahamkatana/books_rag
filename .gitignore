@@ -12,6 +12,11 @@ data/chunks/
 # Keep the books people actually own out of version control too
 pdfs/books/*.pdf
 
+# Same as above, for the papers pipeline
+data/papers/report.csv
+data/papers/chunks/
+pdfs/papers/*.pdf
+
 # Python
 __pycache__/
 *.pyc
@@ -32,3 +37,5 @@ frontend/dist/
 # generated chunk manifest (regeneratable, tied to local pdfs/books/ content)
 data/chunks/.manifest.json
 
+# logs (rotating files, generated at runtime)
+logs/
