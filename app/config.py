@@ -69,3 +69,10 @@ LOG_DIR = BASE_DIR / os.environ.get("LOG_DIR", "logs")
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
 LOG_MAX_BYTES = int(os.environ.get("LOG_MAX_BYTES", str(10 * 1024 * 1024)))  # 10 MB per file
 LOG_BACKUP_COUNT = int(os.environ.get("LOG_BACKUP_COUNT", "5"))  # keep 5 old files beyond the current one
+
+# Crossref (used for paper bibliography lookup -- see
+# app/ingestion/lookup_paper_doi.py). No API key exists or is needed;
+# Crossref's own docs explicitly encourage including real contact info
+# via this "polite pool" parameter for more reliable rate-limit
+# treatment. Entirely optional -- lookups work without it.
+CROSSREF_MAILTO = os.environ.get("CROSSREF_MAILTO")

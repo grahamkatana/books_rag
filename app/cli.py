@@ -47,6 +47,16 @@ def cmd_lookup_bibliography(args):
     run(force=getattr(args, "force", False))
 
 
+def cmd_seed_papers(args):
+    from app.ingestion.seed_papers import main as run
+    run()
+
+
+def cmd_lookup_paper_doi(args):
+    from app.ingestion.lookup_paper_doi import main as run
+    run(force=getattr(args, "force", False))
+
+
 def cmd_embed(args):
     from app.ingestion.embed_upload import main as run
     run(force=getattr(args, "force", False))
@@ -101,6 +111,8 @@ def cmd_ask(args):
 
 
 def main():
+    setup_logging()
+
     parser = argparse.ArgumentParser(description="Book RAG CLI")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -116,6 +128,16 @@ def main():
                                     help="Improve any unverified book's bibliography via Brave Search + LLM extraction (needs BRAVE_API_KEY)")
     lookup_parser.add_argument("--force", action="store_true", help="Redo entries already auto-looked-up, not just missing ones")
     lookup_parser.set_defaults(func=cmd_lookup_bibliography)
+
+    # Papers pipeline -- standalone for now, deliberately not part of
+    # `pipeline` yet, since paper chunking/embedding don't exist as
+    # steps to run after this. Will join `pipeline` once that's built.
+    sub.add_parser("seed-papers", help="Create a Paper row (filename-guessed, unverified) for any new file in pdfs/papers/").set_defaults(func=cmd_seed_papers)
+
+    paper_doi_parser = sub.add_parser("lookup-paper-doi",
+                                       help="Resolve any unverified paper's real bibliography via its DOI (Crossref) -- no API key needed")
+    paper_doi_parser.add_argument("--force", action="store_true", help="Redo entries already DOI-looked-up, not just missing ones")
+    paper_doi_parser.set_defaults(func=cmd_lookup_paper_doi)
 
     embed_parser = sub.add_parser("embed", help="Embed chunks and upsert into Qdrant")
     embed_parser.add_argument("--force", action="store_true", help="Re-embed every chunk, even unchanged ones")
@@ -141,5 +163,4 @@ def main():
 
 
 if __name__ == "__main__":
-    setup_logging()
     main()
