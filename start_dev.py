@@ -1,13 +1,16 @@
 """
 Starts the API server, the main frontend dev server, and the admin app
 dev server together -- a bare-host alternative to docker-compose for
-local development. One Ctrl+C stops all three cleanly.
+local development. One Ctrl+C stops all three cleanly. Opens a browser
+tab for each frontend automatically, once its dev server is actually
+ready to respond (not just "probably started by now").
 
 Usage:
     uv run python dev_up.py
     uv run python dev_up.py --admin-path ../book_rag_admin
     uv run python dev_up.py --skip-admin       (just the API + main frontend)
     uv run python dev_up.py --skip-frontend    (just the API + admin app)
+    uv run python dev_up.py --no-browser       (don't open any browser tabs)
 """
 
 import argparse
@@ -17,6 +20,8 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
+import webbrowser
 from pathlib import Path
 
 IS_WINDOWS = os.name == "nt"
@@ -30,11 +35,28 @@ COLORS = {"api": "\033[36m", "frontend": "\033[35m", "admin": "\033[33m"}
 RESET = "\033[0m"
 
 
+def wait_for_url(url: str, timeout: float = 20, interval: float = 0.3) -> bool:
+    """Polls a URL until it responds (any response at all -- even a 404
+    means the server is up) or timeout elapses. Used to open a browser
+    tab only once a dev server is genuinely ready, instead of guessing a
+    fixed delay that's too short on a slow machine or wastes time on a
+    fast one."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(url, timeout=1)
+            return True
+        except Exception:
+            time.sleep(interval)
+    return False
+
+
 class Service:
-    def __init__(self, name, cmd, cwd):
+    def __init__(self, name, cmd, cwd, url=None):
         self.name = name
         self.cmd = cmd
         self.cwd = Path(cwd)
+        self.url = url  # if set, dev_up.py will open this in a browser once it's ready
         self.process = None
 
     def start(self) -> bool:
@@ -59,6 +81,18 @@ class Service:
         )
         threading.Thread(target=self._stream_output, daemon=True).start()
         return True
+
+    def open_browser_when_ready(self):
+        if not self.url:
+            return
+        if wait_for_url(self.url):
+            opened = webbrowser.open(self.url)
+            if opened:
+                print(f"[{self.name}] opened {self.url} in your browser")
+            else:
+                print(f"[{self.name}] ready at {self.url} -- couldn't open a browser automatically, open it yourself")
+        else:
+            print(f"[{self.name}] gave up waiting for {self.url} to come up -- open it manually once it's ready")
 
     def _stream_output(self):
         prefix = f"{COLORS.get(self.name, '')}[{self.name}]{RESET}"
@@ -107,6 +141,9 @@ def main():
     )
     parser.add_argument("--skip-admin", action="store_true", help="Don't start the admin app")
     parser.add_argument("--skip-frontend", action="store_true", help="Don't start the main frontend")
+    parser.add_argument("--no-browser", action="store_true", help="Don't open any browser tabs automatically")
+    parser.add_argument("--frontend-port", type=int, default=5173, help="Main frontend's dev server port")
+    parser.add_argument("--admin-port", type=int, default=5174, help="Admin app's dev server port")
     args = parser.parse_args()
 
     check_tool("uv")
@@ -116,14 +153,24 @@ def main():
 
     services = [Service("api", ["uv", "run", "python", "server.py"], PROJECT_ROOT)]
     if not args.skip_frontend:
-        services.append(Service("frontend", [npm_cmd, "run", "dev"], PROJECT_ROOT / "frontend"))
+        services.append(Service(
+            "frontend", [npm_cmd, "run", "dev"], PROJECT_ROOT / "frontend",
+            url=None if args.no_browser else f"http://localhost:{args.frontend_port}",
+        ))
     if not args.skip_admin:
-        services.append(Service("admin", [npm_cmd, "run", "dev"], args.admin_path))
+        services.append(Service(
+            "admin", [npm_cmd, "run", "dev"], args.admin_path,
+            url=None if args.no_browser else f"http://localhost:{args.admin_port}",
+        ))
 
     started = [s for s in services if s.start()]
     if not started:
         print("Nothing started -- check the paths above.")
         return
+
+    for s in started:
+        if s.url:
+            threading.Thread(target=s.open_browser_when_ready, daemon=True).start()
 
     print("\nAll services starting. Press Ctrl+C to stop everything.\n")
 
