@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { Button } from "./ui/Button";
 import MultiSelect from "./MultiSelect";
+import CorpusToggle from "./CorpusToggle";
 
-export default function ChatInput({ onSend, disabled, books, selectedSources, onSourcesChange }) {
+export default function ChatInput({
+  onSend, disabled, books, papers,
+  selectedSources, onSourcesChange,
+  corpus, onCorpusChange,
+}) {
   const [value, setValue] = useState("");
 
   const submit = () => {
@@ -12,15 +17,29 @@ export default function ChatInput({ onSend, disabled, books, selectedSources, on
     setValue("");
   };
 
+  const handleCorpusChange = (next) => {
+    onCorpusChange(next);
+    onSourcesChange([]); // the available items differ per corpus -- a stale selection from the other one wouldn't make sense
+  };
+
   return (
     <div className="border-t border-border bg-background px-4 py-3">
-      <div className="max-w-2xl mx-auto mb-2">
-        <MultiSelect
-          books={books}
-          selectedSources={selectedSources}
-          onChange={onSourcesChange}
-          disabled={disabled}
-        />
+      <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2">
+        <CorpusToggle value={corpus} onChange={handleCorpusChange} disabled={disabled} />
+
+        {/* Scoping to specific sources only makes sense within a single
+            corpus -- with "both" selected there's no one list to pick
+            from, so the picker steps aside rather than show something
+            confusing. */}
+        {corpus !== "both" && (
+          <MultiSelect
+            items={corpus === "papers" ? papers : books}
+            selectedSources={selectedSources}
+            onChange={onSourcesChange}
+            disabled={disabled}
+            label={corpus === "papers" ? "papers" : "books"}
+          />
+        )}
       </div>
 
       <div className="flex items-end gap-2 max-w-2xl mx-auto">

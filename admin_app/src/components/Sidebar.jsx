@@ -1,9 +1,10 @@
-import { Users, BookOpen, MessageSquare, LogOut, ShieldCheck } from "lucide-react";
+import { Users, BookOpen, FileText, MessageSquare, LogOut, ShieldCheck } from "lucide-react";
 import { cn } from "../lib/utils";
 
 const NAV_ITEMS = [
   { key: "users", label: "Users", icon: Users },
   { key: "books", label: "Books", icon: BookOpen },
+  { key: "papers", label: "Papers", icon: FileText },
   { key: "chats", label: "Chats", icon: MessageSquare },
 ];
 

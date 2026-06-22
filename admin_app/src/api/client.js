@@ -104,6 +104,20 @@ export function updateBook(id, fields) {
 // up; deleting just the row would leave those orphaned and still
 // searchable with no Book left to resolve their citation against.
 
+export function fetchPapers() {
+  return request("/admin/papers/");
+}
+
+export function updatePaper(id, fields) {
+  return request(`/admin/papers/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(fields),
+  });
+}
+// No deletePaper either, for the exact same reason as books: a Paper
+// row has real Qdrant vectors and a chunk file nothing currently cleans
+// up.
+
 export function fetchChats() {
   return request("/admin/chats/");
 }

@@ -8,8 +8,11 @@ export default function ChatWindow({
   onSend,
   onCitationClick,
   books,
+  papers,
   selectedSources,
   onSourcesChange,
+  corpus,
+  onCorpusChange,
 }) {
   const bottomRef = useRef(null);
 
@@ -24,7 +27,7 @@ export default function ChatWindow({
           {messages.length === 0 && (
             <div className="text-center text-muted-foreground mt-24">
               <p className="text-lg font-medium text-foreground/80">Ask your library something</p>
-              <p className="text-sm mt-1">Answers cite the exact book and page they came from.</p>
+              <p className="text-sm mt-1">Answers cite the exact source and page they came from.</p>
             </div>
           )}
           {messages.map((m) => (
@@ -37,8 +40,11 @@ export default function ChatWindow({
         onSend={onSend}
         disabled={isStreaming}
         books={books}
+        papers={papers}
         selectedSources={selectedSources}
         onSourcesChange={onSourcesChange}
+        corpus={corpus}
+        onCorpusChange={onCorpusChange}
       />
     </div>
   );

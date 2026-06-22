@@ -269,3 +269,40 @@ In rough order of "how central is this to understanding the system":
 For anything not covered here, the README is organized the same way
 this document is (ingestion, retrieval, auth, frontend, deployment) —
 treat this as the table of contents and the README as the chapters.
+
+
+architecture-beta
+    group ingestion(server)[Ingestion CLIs]
+        service bookpipe(server)[Books pipeline] in ingestion
+        service paperpipe(server)[Papers pipeline] in ingestion
+
+    group storage(database)[Storage]
+        service bookvec(database)[book_library] in storage
+        service papervec(database)[paper_library] in storage
+        service reldb(disk)[Relational DB] in storage
+
+    junction storageJoin in storage
+
+    service api(server)[Flask API]
+    service llm(cloud)[OpenAI]
+    junction clientsJoin
+
+    group clients(internet)[Clients]
+        service webapp(internet)[Chat frontend] in clients
+        service adminapp(internet)[Admin app] in clients
+
+    bookpipe:R --> L:bookvec
+    paperpipe:R --> L:papervec
+    bookpipe:B --> T:reldb
+    paperpipe:L --> B:reldb
+
+    bookvec:R --> L:storageJoin
+    papervec:B --> T:storageJoin
+    reldb:R --> B:storageJoin
+
+    api:L --> R:storageJoin
+    api:R --> L:llm
+    api:B --> T:clientsJoin
+
+    webapp:B --> L:clientsJoin
+    adminapp:B --> R:clientsJoin

@@ -46,6 +46,18 @@ class BookSchema(Schema):
     bibliography_verified = fields.Bool()
 
 
+class PaperSchema(Schema):
+    id = fields.Int()
+    source_key = fields.Str()
+    title = fields.Str()
+    authors = fields.Str(allow_none=True)
+    year = fields.Int(allow_none=True)
+    venue = fields.Str(allow_none=True)
+    doi = fields.Str(allow_none=True)
+    abstract = fields.Str(allow_none=True)
+    bibliography_verified = fields.Bool()
+
+
 class MessageSchema(Schema):
     id = fields.Int()
     role = fields.Str()

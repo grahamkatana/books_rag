@@ -5,7 +5,12 @@ import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { cn } from "../lib/utils";
 
-export default function MultiSelect({ books, selectedSources, onChange, disabled }) {
+// items: Book[] or Paper[] -- both shapes carry id/title/source_key,
+// which is all this component actually needs. `edition` is book-only
+// and simply won't render for papers (undefined is falsy), no special
+// casing required. `label` controls the user-facing wording ("books" /
+// "papers") so the UI reads correctly regardless of which list is passed.
+export default function MultiSelect({ items, selectedSources, onChange, disabled, label = "books" }) {
   const toggle = (sourceKey) => {
     if (selectedSources.includes(sourceKey)) {
       onChange(selectedSources.filter((s) => s !== sourceKey));
@@ -14,7 +19,7 @@ export default function MultiSelect({ books, selectedSources, onChange, disabled
     }
   };
 
-  const selectedBooks = books.filter((b) => selectedSources.includes(b.source_key));
+  const selectedItems = items.filter((b) => selectedSources.includes(b.source_key));
 
   return (
     <Popover>
@@ -27,18 +32,18 @@ export default function MultiSelect({ books, selectedSources, onChange, disabled
         >
           <span className="flex items-center gap-1.5 overflow-hidden">
             <Library className="h-3.5 w-3.5 shrink-0" />
-            {selectedBooks.length === 0 ? (
-              <span>All books</span>
+            {selectedItems.length === 0 ? (
+              <span>All {label}</span>
             ) : (
               <span className="flex gap-1 overflow-hidden">
-                {selectedBooks.slice(0, 2).map((b) => (
-                  <Badge key={b.id} variant="accent" className="shrink-0">
-                    {b.title.length > 24 ? b.title.slice(0, 24) + "…" : b.title}
+                {selectedItems.slice(0, 2).map((item) => (
+                  <Badge key={item.id} variant="accent" className="shrink-0">
+                    {item.title.length > 24 ? item.title.slice(0, 24) + "…" : item.title}
                   </Badge>
                 ))}
-                {selectedBooks.length > 2 && (
+                {selectedItems.length > 2 && (
                   <Badge variant="secondary" className="shrink-0">
-                    +{selectedBooks.length - 2}
+                    +{selectedItems.length - 2}
                   </Badge>
                 )}
               </span>
@@ -50,7 +55,7 @@ export default function MultiSelect({ books, selectedSources, onChange, disabled
 
       <PopoverContent className="w-72 p-0">
         <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-medium text-muted-foreground">Scope to books</span>
+          <span className="text-xs font-medium text-muted-foreground">Scope to {label}</span>
           {selectedSources.length > 0 && (
             <button
               onClick={() => onChange([])}
@@ -62,27 +67,27 @@ export default function MultiSelect({ books, selectedSources, onChange, disabled
         </div>
 
         <div className="max-h-64 overflow-y-auto thin-scrollbar p-1">
-          {books.length === 0 && (
-            <p className="px-2 py-3 text-xs text-muted-foreground">No books in the library yet.</p>
+          {items.length === 0 && (
+            <p className="px-2 py-3 text-xs text-muted-foreground">No {label} in the library yet.</p>
           )}
-          {books.map((book) => {
-            const checked = selectedSources.includes(book.source_key);
+          {items.map((item) => {
+            const checked = selectedSources.includes(item.source_key);
             return (
               <label
-                key={book.id}
+                key={item.id}
                 className={cn(
                   "flex cursor-pointer items-start gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
                 )}
               >
                 <Checkbox
                   checked={checked}
-                  onCheckedChange={() => toggle(book.source_key)}
+                  onCheckedChange={() => toggle(item.source_key)}
                   className="mt-0.5"
                 />
                 <span className="flex flex-col">
-                  <span className="leading-tight">{book.title}</span>
-                  {book.edition && (
-                    <span className="text-xs text-muted-foreground">{book.edition}</span>
+                  <span className="leading-tight">{item.title}</span>
+                  {item.edition && (
+                    <span className="text-xs text-muted-foreground">{item.edition}</span>
                   )}
                 </span>
               </label>

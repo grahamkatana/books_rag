@@ -3,6 +3,7 @@ import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
 import UsersPage from "./components/UsersPage";
 import BooksPage from "./components/BooksPage";
+import PapersPage from "./components/PapersPage";
 import ChatsPage from "./components/ChatsPage";
 import { fetchMe, getToken, logout as apiLogout } from "./api/client";
 
@@ -57,6 +58,7 @@ export default function App() {
       <Sidebar user={user} onLogout={handleLogout} activePage={activePage} onNavigate={setActivePage} />
       {activePage === "users" && <UsersPage currentUser={user} onSessionExpired={handleLogout} />}
       {activePage === "books" && <BooksPage onSessionExpired={handleLogout} />}
+      {activePage === "papers" && <PapersPage onSessionExpired={handleLogout} />}
       {activePage === "chats" && <ChatsPage onSessionExpired={handleLogout} />}
     </div>
   );

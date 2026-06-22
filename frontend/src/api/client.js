@@ -89,6 +89,18 @@ export async function fetchBook(bookId) {
   return res.json();
 }
 
+export async function fetchPapers() {
+  const res = await authedFetch(`${API_BASE}/papers/`);
+  if (!res.ok) throw new Error("Failed to load papers");
+  return res.json();
+}
+
+export async function fetchPaper(paperId) {
+  const res = await authedFetch(`${API_BASE}/papers/${paperId}`);
+  if (!res.ok) throw new Error("Failed to load paper");
+  return res.json();
+}
+
 /**
  * Streams an answer via Server-Sent Events. Can't use the browser's
  * built-in EventSource here since it only supports GET requests, and

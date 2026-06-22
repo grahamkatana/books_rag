@@ -1,16 +1,16 @@
 import { useEffect, useState, useCallback } from "react";
-import { Pencil, ShieldCheck, ShieldQuestion, BookOpen } from "lucide-react";
+import { Pencil, ShieldCheck, ShieldQuestion, FileText } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "./ui/Table";
-import BookEditDialog from "./BookEditDialog";
+import PaperEditDialog from "./PaperEditDialog";
 import SearchBar from "./SearchBar";
 import Pagination from "./Pagination";
 import { useSearchAndPaginate } from "../hooks/useSearchAndPaginate";
-import { fetchBooks, updateBook, UnauthorizedError } from "../api/client";
+import { fetchPapers, updatePaper, UnauthorizedError } from "../api/client";
 
-export default function BooksPage({ onSessionExpired }) {
-  const [books, setBooks] = useState([]);
+export default function PapersPage({ onSessionExpired }) {
+  const [papers, setPapers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -19,14 +19,14 @@ export default function BooksPage({ onSessionExpired }) {
   const [formError, setFormError] = useState(null);
 
   const {
-    query, setQuery, page, setPage, totalPages, totalCount, pageSize, items: pagedBooks,
-  } = useSearchAndPaginate(books, { searchFields: ["title", "authors", "source_key"], pageSize: 10 });
+    query, setQuery, page, setPage, totalPages, totalCount, pageSize, items: pagedPapers,
+  } = useSearchAndPaginate(papers, { searchFields: ["title", "authors", "source_key", "doi"], pageSize: 10 });
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      setBooks(await fetchBooks());
+      setPapers(await fetchPapers());
     } catch (err) {
       if (err instanceof UnauthorizedError) onSessionExpired();
       else setLoadError(err.message);
@@ -43,7 +43,7 @@ export default function BooksPage({ onSessionExpired }) {
     setIsSubmitting(true);
     setFormError(null);
     try {
-      await updateBook(editing.id, fields);
+      await updatePaper(editing.id, fields);
       setEditing(null);
       await load();
     } catch (err) {
@@ -57,10 +57,10 @@ export default function BooksPage({ onSessionExpired }) {
   return (
     <div className="flex-1 overflow-y-auto thin-scrollbar p-6">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold text-foreground">Books</h1>
+        <h1 className="text-lg font-semibold text-foreground">Papers</h1>
         <p className="text-sm text-muted-foreground">
-          Correct bibliography directly -- no delete here, since a book's Qdrant vectors
-          and chunk file aren't cleaned up by this yet.
+          Correct bibliography directly -- no delete here, for the same reason as Books: a paper's
+          Qdrant vectors and chunk file aren't cleaned up by this yet.
         </p>
       </div>
 
@@ -69,7 +69,7 @@ export default function BooksPage({ onSessionExpired }) {
       )}
 
       <div className="mb-4">
-        <SearchBar value={query} onChange={setQuery} placeholder="Search by title, author, or filename..." />
+        <SearchBar value={query} onChange={setQuery} placeholder="Search by title, author, filename, or DOI..." />
       </div>
 
       {isLoading ? (
@@ -81,46 +81,46 @@ export default function BooksPage({ onSessionExpired }) {
               <TableHead>Title</TableHead>
               <TableHead>Authors</TableHead>
               <TableHead>Year</TableHead>
-              <TableHead>Edition</TableHead>
+              <TableHead>Venue</TableHead>
               <TableHead>Bibliography</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {pagedBooks.map((b) => (
-              <TableRow key={b.id}>
+            {pagedPapers.map((p) => (
+              <TableRow key={p.id}>
                 <TableCell className="font-medium text-foreground">
                   <div className="flex items-center gap-2">
-                    <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    {b.title}
+                    <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    {p.title}
                   </div>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{b.authors || "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{b.year || "—"}</TableCell>
-                <TableCell className="text-muted-foreground">{b.edition || "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{p.authors || "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{p.year || "—"}</TableCell>
+                <TableCell className="text-muted-foreground">{p.venue || "—"}</TableCell>
                 <TableCell>
-                  {b.bibliography_verified ? (
+                  {p.bibliography_verified ? (
                     <Badge variant="accent" className="gap-1">
                       <ShieldCheck className="h-3 w-3" /> Verified
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className="gap-1">
                       <ShieldQuestion className="h-3 w-3" />
-                      {b.bibliography_source === "auto_lookup" ? `Auto (${b.lookup_confidence})` : "Unverified"}
+                      {p.bibliography_source === "doi_lookup" ? "Auto (DOI)" : "Unverified"}
                     </Badge>
                   )}
                 </TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setFormError(null); setEditing(b); }}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setFormError(null); setEditing(p); }}>
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                 </TableCell>
               </TableRow>
             ))}
-            {pagedBooks.length === 0 && (
+            {pagedPapers.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  {query ? "No books match your search." : "No books yet -- run the ingestion pipeline first."}
+                  {query ? "No papers match your search." : "No papers yet -- run the papers ingestion pipeline first."}
                 </TableCell>
               </TableRow>
             )}
@@ -130,10 +130,10 @@ export default function BooksPage({ onSessionExpired }) {
 
       <Pagination page={page} totalPages={totalPages} totalCount={totalCount} pageSize={pageSize} onPageChange={setPage} />
 
-      <BookEditDialog
+      <PaperEditDialog
         open={!!editing}
         onOpenChange={(open) => !open && setEditing(null)}
-        book={editing}
+        paper={editing}
         onSubmit={submitEdit}
         isSubmitting={isSubmitting}
         error={formError}

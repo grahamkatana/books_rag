@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 def create_app() -> Flask:
     setup_logging()
+
     app = Flask(__name__)
     app.config["SECRET_KEY"] = SECRET_KEY
     app.config["JWT_SECRET_KEY"] = JWT_SECRET_KEY
@@ -43,27 +44,28 @@ def create_app() -> Flask:
     api = Api(app)
 
     from app.api.v1.books import blp as books_blp
+    from app.api.v1.papers import blp as papers_blp
     from app.api.v1.chats import blp as chats_blp
     from app.api.v1.ask import blp as ask_blp
     from app.api.v1.auth import blp as auth_blp
     from app.api.v1.admin_users import blp as admin_users_blp
     from app.api.v1.admin_books import blp as admin_books_blp
+    from app.api.v1.admin_papers import blp as admin_papers_blp
     from app.api.v1.admin_chats import blp as admin_chats_blp
 
     api.register_blueprint(books_blp)
+    api.register_blueprint(papers_blp)
     api.register_blueprint(chats_blp)
     api.register_blueprint(ask_blp)
     api.register_blueprint(auth_blp)
     api.register_blueprint(admin_users_blp)
     api.register_blueprint(admin_books_blp)
+    api.register_blueprint(admin_papers_blp)
     api.register_blueprint(admin_chats_blp)
+
     from app.admin.views import register_admin
     register_admin(app)
 
-    @app.route("/healthz")
-    def healthz():
-        return jsonify({"status": "ok"})
-    
     @app.before_request
     def _log_request_start():
         g._start_time = time.time()
@@ -81,5 +83,9 @@ def create_app() -> Flask:
             },
         )
         return response
+
+    @app.route("/healthz")
+    def healthz():
+        return jsonify({"status": "ok"})
 
     return app

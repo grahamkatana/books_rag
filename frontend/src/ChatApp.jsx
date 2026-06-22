@@ -2,19 +2,25 @@ import { useEffect, useState, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import CitationPanel from "./components/CitationPanel";
-import { fetchChats, fetchChat, fetchBook, fetchBooks, deleteChat, streamAsk, UnauthorizedError } from "./api/client";
+import {
+  fetchChats, fetchChat, fetchBook, fetchBooks, fetchPaper, fetchPapers,
+  deleteChat, streamAsk, UnauthorizedError,
+} from "./api/client";
 
 let nextLocalId = -1; // negative ids for optimistic, not-yet-persisted messages
 
 export default function ChatApp({ user, onSessionExpired, onLogout }) {
   const [chats, setChats] = useState([]);
   const [books, setBooks] = useState([]);
+  const [papers, setPapers] = useState([]);
   const [activeChatId, setActiveChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [selectedCitation, setSelectedCitation] = useState(null);
   const [selectedBook, setSelectedBook] = useState(null);
-  const [selectedSources, setSelectedSources] = useState([]); // empty = search all books
+  const [selectedPaper, setSelectedPaper] = useState(null);
+  const [selectedSources, setSelectedSources] = useState([]); // empty = search every item in the current corpus
+  const [corpus, setCorpus] = useState("books"); // "books" | "papers" | "both"
 
   const handleError = useCallback((err) => {
     if (err instanceof UnauthorizedError) {
@@ -35,6 +41,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   useEffect(() => {
     loadChats();
     fetchBooks().then(setBooks).catch(handleError);
+    fetchPapers().then(setPapers).catch(handleError);
   }, [loadChats, handleError]);
 
   const selectChat = async (chatId) => {
@@ -71,12 +78,18 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   const handleCitationClick = async (citation) => {
     setSelectedCitation(citation);
     setSelectedBook(null);
-    if (citation.book_id != null) {
-      try {
+    setSelectedPaper(null);
+    // Mutually exclusive on the backend (a Citation resolves to at most
+    // one of book_id/paper_id) -- mirrored here the same way rather than
+    // guessing which fetch to make.
+    try {
+      if (citation.paper_id != null) {
+        setSelectedPaper(await fetchPaper(citation.paper_id));
+      } else if (citation.book_id != null) {
         setSelectedBook(await fetchBook(citation.book_id));
-      } catch (err) {
-        handleError(err);
       }
+    } catch (err) {
+      handleError(err);
     }
   };
 
@@ -87,7 +100,12 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
     setIsStreaming(true);
 
     streamAsk(
-      { question, chat_id: activeChatId, sources: selectedSources.length ? selectedSources : null },
+      {
+        question,
+        chat_id: activeChatId,
+        sources: selectedSources.length ? selectedSources : null,
+        corpus,
+      },
       {
         onChatId: (id) => {
           if (!activeChatId) setActiveChatId(id);
@@ -135,13 +153,17 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
         onSend={sendMessage}
         onCitationClick={handleCitationClick}
         books={books}
+        papers={papers}
         selectedSources={selectedSources}
         onSourcesChange={setSelectedSources}
+        corpus={corpus}
+        onCorpusChange={setCorpus}
       />
       {selectedCitation && (
         <CitationPanel
           citation={selectedCitation}
           book={selectedBook}
+          paper={selectedPaper}
           onClose={() => setSelectedCitation(null)}
         />
       )}

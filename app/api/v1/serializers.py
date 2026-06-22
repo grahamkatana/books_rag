@@ -12,7 +12,7 @@ from app.models.chat import Chat, Message, Citation
 
 
 def citation_to_dict(c: Citation) -> dict:
-    return {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id}
+    return {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id, "paper_id": c.paper_id}
 
 
 def message_to_dict(m: Message) -> dict:
@@ -57,4 +57,18 @@ def book_to_dict(b: Book) -> dict:
         "work_key": b.work_key,
         "is_preferred_edition": b.is_preferred_edition,
         "bibliography_verified": b.bibliography_verified,
+    }
+
+
+def paper_to_dict(p) -> dict:
+    return {
+        "id": p.id,
+        "source_key": p.source_key,
+        "title": p.title,
+        "authors": p.authors,
+        "year": p.year,
+        "venue": p.venue,
+        "doi": p.doi,
+        "abstract": p.abstract,
+        "bibliography_verified": p.bibliography_verified,
     }
