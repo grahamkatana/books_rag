@@ -1,4 +1,5 @@
 from marshmallow import Schema, fields
+from marshmallow.validate import OneOf
 
 from app.config import DEFAULT_TOP_K, DEFAULT_CHAT_MODEL
 
@@ -13,12 +14,15 @@ class AskRequestSchema(Schema):
     model = fields.Str(required=False, load_default=DEFAULT_CHAT_MODEL)
     all_editions = fields.Bool(required=False, load_default=False,
                                 metadata={"description": "Search every edition of a book instead of just the preferred one"})
+    corpus = fields.Str(required=False, load_default="books", validate=OneOf(["books", "papers", "both"]),
+                         metadata={"description": "Which library to search: 'books' (default), 'papers', or 'both'"})
 
 
 class CitationSchema(Schema):
     apa_text = fields.Str()
     locator = fields.Str(allow_none=True)
     book_id = fields.Int(allow_none=True)
+    paper_id = fields.Int(allow_none=True)
 
 
 class AskResponseSchema(Schema):

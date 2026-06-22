@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
 
-from app.config import EMBEDDING_MODEL, QDRANT_COLLECTION, DEFAULT_CHAT_MODEL, DEFAULT_TOP_K, DATA_DIR
+from app.config import EMBEDDING_MODEL, QDRANT_COLLECTION, PAPERS_QDRANT_COLLECTION, DEFAULT_CHAT_MODEL, DEFAULT_TOP_K, DATA_DIR
 from app.models.book import Book
+from app.models.paper import Paper
 from app.models.chat import Chat, Message, Citation
 from app.retrieval.citations import render_citation, extract_citation_tags, RenderedCitation
 
@@ -47,11 +48,22 @@ def get_excluded_source_keys(session: Session) -> list[str]:
 
 
 def search_chunks(qdrant: QdrantClient, query_vector: list, top_k: int,
-                   source_filter=None, exclude_source_keys: list | None = None):
+                   source_filter=None, exclude_source_keys: list | None = None,
+                   corpus: str = "books"):
     """source_filter: None, a single source_key, or a list of source_keys
     to scope the search to (matches ANY of them). Always wins over the
     edition-preference exclusion -- naming books explicitly always wins,
-    even if one of them is a non-preferred older edition."""
+    even if one of them is a non-preferred older edition.
+
+    corpus: "books" (default, preserves every existing caller's
+    behavior exactly), "papers", or "both". Books and papers live in
+    separate Qdrant collections on purpose (see the README), so "both"
+    means two real, separate queries -- there's no single cross-
+    collection query Qdrant can run -- merged by score and truncated to
+    top_k afterward. Each returned point's payload gets an in-memory
+    "_corpus" marker (never written back to Qdrant) so
+    build_context_and_lookup() knows whether to resolve its source
+    against Book or Paper, rather than guessing from a lookup miss."""
     sources = _normalize_sources(source_filter)
     must = []
     must_not = []
@@ -63,13 +75,32 @@ def search_chunks(qdrant: QdrantClient, query_vector: list, top_k: int,
         must_not = [FieldCondition(key="source", match=MatchValue(value=k)) for k in exclude_source_keys]
 
     query_filter = Filter(must=must or None, must_not=must_not or None) if (must or must_not) else None
-    result = qdrant.query_points(
-        collection_name=QDRANT_COLLECTION,
-        query=query_vector,
-        limit=top_k,
-        query_filter=query_filter,
-    )
-    return result.points
+
+    collections = []
+    if corpus in ("books", "both"):
+        collections.append(("books", QDRANT_COLLECTION))
+    if corpus in ("papers", "both"):
+        collections.append(("papers", PAPERS_QDRANT_COLLECTION))
+    if not collections:
+        raise ValueError(f"Unknown corpus {corpus!r} -- expected 'books', 'papers', or 'both'")
+
+    all_points = []
+    for corpus_name, collection_name in collections:
+        result = qdrant.query_points(
+            collection_name=collection_name,
+            query=query_vector,
+            limit=top_k,
+            query_filter=query_filter,
+        )
+        for point in result.points:
+            point.payload["_corpus"] = corpus_name
+        all_points.extend(result.points)
+
+    if len(collections) > 1:
+        all_points.sort(key=lambda p: p.score, reverse=True)
+        all_points = all_points[:top_k]
+
+    return all_points
 
 
 def _load_isbn_lookup() -> dict:
@@ -92,7 +123,8 @@ def _load_isbn_lookup() -> dict:
 
 def build_context_and_lookup(session: Session, hits) -> tuple[str, dict]:
     """Builds the LLM context block, and a lookup of apa_text -> RenderedCitation
-    so <CITATION> tags in the answer can be resolved back to a Book afterward.
+    so <CITATION> tags in the answer can be resolved back to a Book or
+    Paper afterward.
 
     Also appends a short "known ISBNs" footer when scripts/extract_isbns.py
     has been run for any of the cited books -- pure disambiguation signal
@@ -101,27 +133,43 @@ def build_context_and_lookup(session: Session, hits) -> tuple[str, dict]:
     edition-level anchor as exists), not something that belongs in APA
     citation format itself. Kept deliberately outside the <CITATION> tags
     and explicitly labeled "do not include in your answer" so it can't be
-    mistaken for something to copy into the visible response."""
+    mistaken for something to copy into the visible response. Books-only:
+    there's no paper equivalent of isbns.csv (a DOI plays that role for
+    papers already, and it's resolved at ingestion time, not retrieval
+    time)."""
     blocks = []
     lookup: dict[str, RenderedCitation] = {}
     book_cache: dict[str, Book | None] = {}
+    paper_cache: dict[str, Paper | None] = {}
     isbn_lookup = _load_isbn_lookup()
     isbns_used: dict[str, str] = {}
 
     for h in hits:
         payload = h.payload
         source_key = payload.get("source")
-        if source_key not in book_cache:
-            book_cache[source_key] = session.query(Book).filter_by(source_key=source_key).one_or_none()
-        book = book_cache[source_key]
+        # Absent only for hits not produced by search_chunks() itself
+        # (e.g. directly-constructed objects in older tests) -- default
+        # to "books" so that case keeps behaving exactly as before this
+        # corpus parameter existed.
+        corpus = payload.get("_corpus", "books")
 
-        rendered = render_citation(payload, book)
+        if corpus == "papers":
+            if source_key not in paper_cache:
+                paper_cache[source_key] = session.query(Paper).filter_by(source_key=source_key).one_or_none()
+            source_obj = paper_cache[source_key]
+        else:
+            if source_key not in book_cache:
+                book_cache[source_key] = session.query(Book).filter_by(source_key=source_key).one_or_none()
+            source_obj = book_cache[source_key]
+
+        rendered = render_citation(payload, source_obj)
         lookup[rendered.apa_text] = rendered
         blocks.append(f"{rendered.tagged}\n{payload.get('text', '')}")
 
-        isbn = isbn_lookup.get(f"{source_key}.pdf")
-        if isbn:
-            isbns_used[rendered.apa_text] = isbn
+        if corpus != "papers":
+            isbn = isbn_lookup.get(f"{source_key}.pdf")
+            if isbn:
+                isbns_used[rendered.apa_text] = isbn
 
     context = "\n\n---\n\n".join(blocks)
 
@@ -162,7 +210,7 @@ def ask_llm_stream(openai_client, question: str, context: str, model: str, histo
 
 def _build_messages(question: str, context: str, history: str) -> list:
     system_prompt = (
-        "You answer questions using only the provided book excerpts. Each "
+        "You answer questions using only the provided excerpts. Each "
         "excerpt is preceded by its citation wrapped in <CITATION></CITATION> "
         "tags. When you use information from an excerpt, copy its exact "
         "<CITATION>...</CITATION> tag immediately after the sentence that "
@@ -243,6 +291,7 @@ def save_turn(session: Session, chat: Chat, question: str, answer: str, citation
         session.add(Citation(
             message_id=assistant_message.id,
             book_id=rendered.book.id if rendered and rendered.book else None,
+            paper_id=rendered.paper.id if rendered and rendered.paper else None,
             apa_text=apa_text,
             locator=rendered.locator if rendered else None,
             order_index=i,
@@ -265,6 +314,7 @@ def answer_question(
     model: str = DEFAULT_CHAT_MODEL,
     all_editions: bool = False,
     user_id: int | None = None,
+    corpus: str = "books",
 ) -> dict:
     """End-to-end: retrieve, generate, persist. Returns a dict with the
     chat id, answer text, and the structured citations actually used --
@@ -273,17 +323,23 @@ def answer_question(
     source_filter: None, a single source_key, or a list of source_keys to
     scope the search to (matches ANY of them).
 
+    corpus: "books" (default -- every existing caller keeps behaving
+    exactly as before), "papers", or "both".
+
     By default, when a book has multiple editions in the library, only the
     preferred (normally latest) edition is searched, so an answer never
     silently blends content from a superseded edition. Pass
     all_editions=True to search every edition, or source_filter to pin
-    specific files regardless of their preference."""
+    specific files regardless of their preference. (Edition exclusion is
+    a books-only concept -- skipped entirely, not just always empty, when
+    corpus="papers" so a papers-only question doesn't pay for a Book
+    query that could never affect its results.)"""
     chat = get_or_create_chat(session, chat_id, question, user_id=user_id)
     history = get_n_chat_messages_context(session=session, chat_id=chat_id)
 
     query_vector = embed_query(openai_client, question)
-    exclude = [] if all_editions else get_excluded_source_keys(session)
-    hits = search_chunks(qdrant, query_vector, top_k, source_filter, exclude_source_keys=exclude)
+    exclude = [] if (all_editions or corpus == "papers") else get_excluded_source_keys(session)
+    hits = search_chunks(qdrant, query_vector, top_k, source_filter, exclude_source_keys=exclude, corpus=corpus)
 
     if not hits:
         answer = "I couldn't find anything relevant to that question in the library."
@@ -295,7 +351,7 @@ def answer_question(
     assistant_message = save_turn(session, chat, question, answer, citation_lookup)
 
     citations_out = [
-        {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id}
+        {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id, "paper_id": c.paper_id}
         for c in assistant_message.citations
     ]
     return {"chat_id": chat.id, "answer": answer, "citations": citations_out}
@@ -312,6 +368,7 @@ def answer_question_stream(
     model: str = DEFAULT_CHAT_MODEL,
     all_editions: bool = False,
     user_id: int | None = None,
+    corpus: str = "books",
 ):
     """Generator version of answer_question. Yields (event_type, payload)
     tuples as the answer is generated:
@@ -327,8 +384,8 @@ def answer_question_stream(
     yield ("chat_id", chat.id)
 
     query_vector = embed_query(openai_client, question)
-    exclude = [] if all_editions else get_excluded_source_keys(session)
-    hits = search_chunks(qdrant, query_vector, top_k, source_filter, exclude_source_keys=exclude)
+    exclude = [] if (all_editions or corpus == "papers") else get_excluded_source_keys(session)
+    hits = search_chunks(qdrant, query_vector, top_k, source_filter, exclude_source_keys=exclude, corpus=corpus)
 
     if not hits:
         answer = "I couldn't find anything relevant to that question in the library."
@@ -348,7 +405,7 @@ def answer_question_stream(
     assistant_message = save_turn(session, chat, question, answer, citation_lookup)
 
     citations_out = [
-        {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id}
+        {"apa_text": c.apa_text, "locator": c.locator, "book_id": c.book_id, "paper_id": c.paper_id}
         for c in assistant_message.citations
     ]
     yield ("done", {"citations": citations_out})

@@ -57,6 +57,16 @@ def cmd_lookup_paper_doi(args):
     run(force=getattr(args, "force", False))
 
 
+def cmd_chunk_papers(args):
+    from app.ingestion.chunk_papers import main as run
+    run(force=getattr(args, "force", False))
+
+
+def cmd_embed_papers(args):
+    from app.ingestion.embed_upload_papers import main as run
+    run(force=getattr(args, "force", False))
+
+
 def cmd_embed(args):
     from app.ingestion.embed_upload import main as run
     run(force=getattr(args, "force", False))
@@ -88,6 +98,31 @@ def cmd_pipeline(args):
     print("\nPipeline complete -- the library is ready to query.")
 
 
+def cmd_pipeline_papers(args):
+    # No report step here, unlike the books pipeline -- papers don't
+    # have a trusted/untrusted chunking fork to decide between, so
+    # there's nothing for a report to determine in advance. seed-papers
+    # only needs to run once per new file too, same reasoning as
+    # seed-books: it never touches a row that already exists.
+    steps = [
+        ("seed-papers", cmd_seed_papers),
+        ("lookup-paper-doi", cmd_lookup_paper_doi),
+        ("chunk-papers", cmd_chunk_papers),
+        ("embed-papers", cmd_embed_papers),
+    ]
+    for i, (name, fn) in enumerate(steps, start=1):
+        print(f"\n=== Step {i}/{len(steps)}: {name} ===")
+        try:
+            fn(args)
+        except SystemExit as e:
+            print(f"\nPipeline stopped at step {i} ({name}): {e}")
+            raise
+        except Exception as e:
+            print(f"\nPipeline stopped at step {i} ({name}) due to an unexpected error: {e}")
+            raise
+    print("\nPapers pipeline complete -- the papers library is ready to query (pass corpus='papers' or 'both' when asking).")
+
+
 def cmd_ask(args):
     openai_client = OpenAI()
     qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
@@ -101,6 +136,7 @@ def cmd_ask(args):
             top_k=args.top_k,
             model=args.model,
             all_editions=args.all_editions,
+            corpus=args.corpus,
         )
 
     print(f"\nChat ID: {result['chat_id']} (pass --chat-id {result['chat_id']} to continue this conversation)\n")
@@ -139,6 +175,14 @@ def main():
     paper_doi_parser.add_argument("--force", action="store_true", help="Redo entries already DOI-looked-up, not just missing ones")
     paper_doi_parser.set_defaults(func=cmd_lookup_paper_doi)
 
+    chunk_papers_parser = sub.add_parser("chunk-papers", help="Chunk papers in pdfs/papers/ via Docling into data/papers/chunks/*.jsonl")
+    chunk_papers_parser.add_argument("--force", action="store_true", help="Re-chunk every paper, even unchanged ones")
+    chunk_papers_parser.set_defaults(func=cmd_chunk_papers)
+
+    embed_papers_parser = sub.add_parser("embed-papers", help="Embed paper chunks and upsert into the separate papers Qdrant collection")
+    embed_papers_parser.add_argument("--force", action="store_true", help="Re-embed every paper chunk, even unchanged ones")
+    embed_papers_parser.set_defaults(func=cmd_embed_papers)
+
     embed_parser = sub.add_parser("embed", help="Embed chunks and upsert into Qdrant")
     embed_parser.add_argument("--force", action="store_true", help="Re-embed every chunk, even unchanged ones")
     embed_parser.set_defaults(func=cmd_embed)
@@ -146,6 +190,10 @@ def main():
     pipeline_parser = sub.add_parser("pipeline", help="Run report, seed-books, lookup-bibliography, chunk, and embed in sequence")
     pipeline_parser.add_argument("--force", action="store_true", help="Force the chunk and embed steps to reprocess everything")
     pipeline_parser.set_defaults(func=cmd_pipeline)
+
+    pipeline_papers_parser = sub.add_parser("pipeline-papers", help="Run seed-papers, lookup-paper-doi, chunk-papers, and embed-papers in sequence")
+    pipeline_papers_parser.add_argument("--force", action="store_true", help="Force every step to reprocess everything, not just unverified/unchanged items")
+    pipeline_papers_parser.set_defaults(func=cmd_pipeline_papers)
 
     ask_parser = sub.add_parser("ask", help="Ask a question against the library")
     ask_parser.add_argument("question")
@@ -156,6 +204,8 @@ def main():
     ask_parser.add_argument("--model", default=DEFAULT_CHAT_MODEL)
     ask_parser.add_argument("--all-editions", action="store_true",
                              help="Search every edition of a book instead of just the preferred one")
+    ask_parser.add_argument("--corpus", choices=["books", "papers", "both"], default="books",
+                             help="Which library to search: books (default), papers, or both")
     ask_parser.set_defaults(func=cmd_ask)
 
     args = parser.parse_args()

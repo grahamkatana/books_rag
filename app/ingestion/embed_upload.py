@@ -31,13 +31,13 @@ from app.config import (
 BATCH_SIZE = 100
 
 
-def ensure_collection(qdrant: QdrantClient):
-    if not qdrant.collection_exists(QDRANT_COLLECTION):
+def ensure_collection(qdrant: QdrantClient, collection_name: str = QDRANT_COLLECTION):
+    if not qdrant.collection_exists(collection_name):
         qdrant.create_collection(
-            collection_name=QDRANT_COLLECTION,
+            collection_name=collection_name,
             vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
         )
-        print(f"Created collection '{QDRANT_COLLECTION}' ({EMBEDDING_DIM}-dim, cosine).")
+        print(f"Created collection '{collection_name}' ({EMBEDDING_DIM}-dim, cosine).")
 
 
 def load_all_chunks(chunks_dir=CHUNKS_DIR) -> list:
@@ -60,27 +60,27 @@ def stable_point_id(chunk_id: str) -> int:
     return int(hashlib.sha256(chunk_id.encode("utf-8")).hexdigest()[:16], 16)
 
 
-def get_existing_payloads(qdrant: QdrantClient, point_ids: list) -> dict:
+def get_existing_payloads(qdrant: QdrantClient, point_ids: list, collection_name: str = QDRANT_COLLECTION) -> dict:
     """Batch-retrieves whichever of these point ids already exist, keyed
     by id. IDs that don't exist yet are simply absent from the result."""
     if not point_ids:
         return {}
     records = qdrant.retrieve(
-        collection_name=QDRANT_COLLECTION, ids=point_ids, with_payload=True, with_vectors=False
+        collection_name=collection_name, ids=point_ids, with_payload=True, with_vectors=False
     )
     return {r.id: r.payload for r in records}
 
 
 def embed_and_upsert(openai_client, qdrant: QdrantClient, chunks: list,
                       model: str = EMBEDDING_MODEL, batch_size: int = BATCH_SIZE,
-                      force: bool = False) -> dict:
+                      force: bool = False, collection_name: str = QDRANT_COLLECTION) -> dict:
     embedded = 0
     skipped = 0
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
         ids = [stable_point_id(c["chunk_id"]) for c in batch]
-        existing = {} if force else get_existing_payloads(qdrant, ids)
+        existing = {} if force else get_existing_payloads(qdrant, ids, collection_name=collection_name)
 
         to_embed, to_embed_ids = [], []
         for c, pid in zip(batch, ids):
@@ -106,7 +106,7 @@ def embed_and_upsert(openai_client, qdrant: QdrantClient, chunks: list,
             PointStruct(id=pid, vector=v, payload={**c, "_embedding_model": model})
             for c, v, pid in zip(to_embed, embeddings, to_embed_ids)
         ]
-        qdrant.upsert(collection_name=QDRANT_COLLECTION, points=points)
+        qdrant.upsert(collection_name=collection_name, points=points)
         embedded += len(points)
         print(f"  embedded {embedded} new/changed, skipped {skipped} unchanged "
               f"({min(i + batch_size, len(chunks))}/{len(chunks)} checked)")

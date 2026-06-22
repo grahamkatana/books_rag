@@ -4,7 +4,9 @@ Chat history models.
 A Chat is one conversation thread, holding many Messages in order. Each
 assistant Message can have multiple Citations -- one row per
 <CITATION>...</CITATION> tag found in its content, resolved back to a
-Book where possible.
+Book or a Paper where possible (never both -- the two FKs are mutually
+exclusive, enforced by the write path in app/retrieval/query_engine.py
+and app/retrieval/citations.py, not a DB constraint).
 """
 
 from datetime import datetime, timezone
@@ -14,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 from app.models.book import Book
+from app.models.paper import Paper
 
 
 class Chat(Base):
@@ -69,6 +72,13 @@ class Citation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), nullable=False)
     book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id"), nullable=True)
+    # Mutually exclusive with book_id -- a citation comes from exactly
+    # one corpus. Both nullable (rather than, say, a single polymorphic
+    # "source_type" + "source_id" pair) so each keeps a real, normal
+    # foreign key that the database and the ORM both understand and can
+    # validate -- joining straight to Book or Paper, no manual dispatch
+    # on a type string required anywhere this gets queried.
+    paper_id: Mapped[int | None] = mapped_column(ForeignKey("papers.id"), nullable=True)
 
     # The exact text that was inside <CITATION>...</CITATION> in the answer,
     # e.g. "(Sommerville, 2011, p. 47)" or '(Moffat, 2026, "Positioning
@@ -83,6 +93,7 @@ class Citation(Base):
 
     message: Mapped["Message"] = relationship(back_populates="citations")
     book: Mapped["Book | None"] = relationship()
+    paper: Mapped["Paper | None"] = relationship()
 
     def __repr__(self) -> str:
         return f"<Citation id={self.id} apa_text={self.apa_text!r}>"

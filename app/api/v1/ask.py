@@ -36,6 +36,7 @@ class Ask(MethodView):
                     model=args["model"],
                     all_editions=args["all_editions"],
                     user_id=user_id,
+                    corpus=args["corpus"],
                 )
             except PermissionError:
                 abort(404, message="Chat not found")
@@ -78,6 +79,7 @@ def ask_stream(args):
                     model=args["model"],
                     all_editions=args["all_editions"],
                     user_id=user_id,
+                    corpus=args["corpus"],
                 ):
                     data = {"text": payload} if event_type == "delta" else (
                         {"chat_id": payload} if event_type == "chat_id" else payload
