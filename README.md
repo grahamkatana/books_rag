@@ -714,3 +714,5 @@ linked the way book editions are.
 
 `uv run alembic revision --autogenerate -m "message"`
 `uv run alembic upgrade head`
+
+`uv run celery -A app.worker.celery_app worker --loglevel=info --pool=solo`

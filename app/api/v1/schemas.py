@@ -58,6 +58,19 @@ class PaperSchema(Schema):
     bibliography_verified = fields.Bool()
 
 
+class DeleteQuerySchema(Schema):
+    delete_pdf = fields.Bool(load_default=False, metadata={
+        "description": "Also remove the original source PDF, not just the database row, "
+                        "Qdrant vectors, and chunk file"
+    })
+
+
+class JobQueuedSchema(Schema):
+    task_id = fields.Str()
+    source_key = fields.Str()
+    status = fields.Str()
+
+
 class MessageSchema(Schema):
     id = fields.Int()
     role = fields.Str()

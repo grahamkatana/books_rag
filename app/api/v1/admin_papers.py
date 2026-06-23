@@ -1,15 +1,15 @@
 """
 Admin-only endpoints for managing paper bibliography via the API.
-Mirrors admin_books.py exactly, including the missing-on-purpose DELETE:
-a Paper row has real Qdrant vectors and a
-data/papers/chunks/<source_key>.jsonl file associated with it that
-nothing in this project currently cleans up. Same reasoning, same gap,
-same decision not to offer half of that operation.
+Mirrors admin_books.py exactly, including how DELETE works: it never
+deletes anything itself, it enqueues delete_paper_task
+(app/worker/tasks.py) and returns 202 with a task_id immediately. Poll
+GET /api/v1/admin/jobs/<task_id> for the result.
 
 Endpoints:
-    GET /api/v1/admin/papers/        list every paper
-    GET /api/v1/admin/papers/<id>    get one paper
-    PUT /api/v1/admin/papers/<id>    update a paper's bibliography
+    GET    /api/v1/admin/papers/        list every paper
+    GET    /api/v1/admin/papers/<id>    get one paper
+    PUT    /api/v1/admin/papers/<id>    update a paper's bibliography
+    DELETE /api/v1/admin/papers/<id>    enqueue full deletion as a background job
 """
 
 from flask.views import MethodView
@@ -19,11 +19,12 @@ from marshmallow import Schema, fields
 from app.db.session import get_session
 from app.models.paper import Paper
 from app.auth.decorators import admin_required
+from app.api.v1.schemas import DeleteQuerySchema, JobQueuedSchema
 
 blp = Blueprint(
     "admin_papers", __name__,
     url_prefix="/api/v1/admin/papers",
-    description="Admin-only paper bibliography management (list/get/update)",
+    description="Admin-only paper bibliography management (list/get/update/delete)",
 )
 
 
@@ -113,3 +114,21 @@ class AdminPaperDetail(MethodView):
             session.add(paper)
             session.flush()
             return paper_to_dict(paper)
+
+    @admin_required
+    @blp.arguments(DeleteQuerySchema, location="query")
+    @blp.response(202, JobQueuedSchema)
+    def delete(self, query_args, paper_id):
+        """Enqueue full deletion (Qdrant vectors, chunk file, manifest
+        entry, and the DB row) as a background job. Returns immediately
+        with a task_id -- poll GET /api/v1/admin/jobs/<task_id> for the
+        result."""
+        with get_session() as session:
+            paper = session.get(Paper, paper_id)
+            if paper is None:
+                abort(404, message="Paper not found")
+            source_key = paper.source_key
+
+        from app.worker.tasks import delete_paper_task
+        async_result = delete_paper_task.delay(source_key, delete_pdf=query_args["delete_pdf"])
+        return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}

@@ -52,6 +52,7 @@ def create_app() -> Flask:
     from app.api.v1.admin_books import blp as admin_books_blp
     from app.api.v1.admin_papers import blp as admin_papers_blp
     from app.api.v1.admin_chats import blp as admin_chats_blp
+    from app.api.v1.admin_jobs import blp as admin_jobs_blp
 
     api.register_blueprint(books_blp)
     api.register_blueprint(papers_blp)
@@ -62,6 +63,7 @@ def create_app() -> Flask:
     api.register_blueprint(admin_books_blp)
     api.register_blueprint(admin_papers_blp)
     api.register_blueprint(admin_chats_blp)
+    api.register_blueprint(admin_jobs_blp)
 
     from app.admin.views import register_admin
     register_admin(app)

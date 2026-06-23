@@ -191,7 +191,17 @@ services:
       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
     depends_on:
       - loki
-
+  redis:
+    image: redis:7.4-alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass MySecurePassword123 --appendonly yes
+    volumes:
+      - redis_data:/data
+  
 volumes:
   qdrant_storage:
   grafana_data:
+  redis_data:

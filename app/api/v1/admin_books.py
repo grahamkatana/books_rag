@@ -5,17 +5,21 @@ requires admin_required (a real DB lookup, not just a JWT claim -- see
 app/auth/decorators.py).
 
 Endpoints:
-    GET /api/v1/admin/books/        list every book
-    GET /api/v1/admin/books/<id>    get one book
-    PUT /api/v1/admin/books/<id>    update a book's bibliography
+    GET    /api/v1/admin/books/        list every book
+    GET    /api/v1/admin/books/<id>    get one book
+    PUT    /api/v1/admin/books/<id>    update a book's bibliography
+    DELETE /api/v1/admin/books/<id>    enqueue full deletion as a background job
 
-No DELETE here, and that's deliberate, not an oversight: a Book row has
-real Qdrant vectors and a data/chunks/<source_key>.jsonl file associated
-with it that nothing in this project currently cleans up. Deleting just
-the database row would leave those chunks searchable forever with no
-Book left to resolve their citation against -- same reasoning the
-Flask-Admin panel's BookAdminView now follows too (can_delete = False
-there as well, as of this file existing).
+A book's vectors, chunk file, and DB row are deleted together by
+app/ingestion/delete_book.py -- this endpoint never deletes anything
+itself, it only enqueues delete_book_task (app/worker/tasks.py) and
+returns 202 with a task_id immediately, since the operation runs
+out-of-band on a Celery worker rather than blocking this request for
+however long it takes. Poll GET /api/v1/admin/jobs/<task_id> for the
+result. DELETE was deliberately withheld here until that worker
+infrastructure existed -- offering just the DB-row half of the
+operation would have left Qdrant vectors and the chunk file orphaned
+forever, which is exactly why this took this long to add.
 
 A manual edit through here is the same kind of action as editing
 through /admin: it's a human having looked at the data, so it gets
@@ -30,6 +34,7 @@ from marshmallow import Schema, fields
 from app.db.session import get_session
 from app.models.book import Book
 from app.auth.decorators import admin_required
+from app.api.v1.schemas import DeleteQuerySchema, JobQueuedSchema
 
 blp = Blueprint(
     "admin_books", __name__,
@@ -138,3 +143,22 @@ class AdminBookDetail(MethodView):
             session.add(book)
             session.flush()
             return book_to_dict(book)
+
+    @admin_required
+    @blp.arguments(DeleteQuerySchema, location="query")
+    @blp.response(202, JobQueuedSchema)
+    def delete(self, query_args, book_id):
+        """Enqueue full deletion (Qdrant vectors, chunk file, manifest
+        entry, and the DB row) as a background job. Returns immediately
+        with a task_id -- this never blocks on the actual deletion, and
+        never performs it inline. Poll GET /api/v1/admin/jobs/<task_id>
+        to find out when it's actually done."""
+        with get_session() as session:
+            book = session.get(Book, book_id)
+            if book is None:
+                abort(404, message="Book not found")
+            source_key = book.source_key
+
+        from app.worker.tasks import delete_book_task
+        async_result = delete_book_task.delay(source_key, delete_pdf=query_args["delete_pdf"])
+        return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}

@@ -76,3 +76,21 @@ LOG_BACKUP_COUNT = int(os.environ.get("LOG_BACKUP_COUNT", "5"))  # keep 5 old fi
 # via this "polite pool" parameter for more reliable rate-limit
 # treatment. Entirely optional -- lookups work without it.
 CROSSREF_MAILTO = os.environ.get("CROSSREF_MAILTO")
+
+# Redis / Celery -- used by app/worker/* to run admin operations (book/
+# paper deletion, for now) as background jobs instead of blocking an API
+# request for however long the operation takes. Broker and result
+# backend both default to the same Redis instance since there's no
+# reason to run two separate ones for a project this size; override
+# independently if that ever changes.
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
+
+# Where uploaded .docx files for the verification feature get saved,
+# the same "keep the real source file around" philosophy as pdfs/books/
+# and pdfs/papers/ -- not strictly required for the pipeline to run (the
+# markdown it produces is what everything downstream actually uses), but
+# useful for debugging a bad conversion or re-running it later without
+# asking the user to re-upload.
+VERIFICATION_UPLOADS_DIR = BASE_DIR / "data" / "verification_uploads"
