@@ -26,8 +26,12 @@ class Chat(Base):
     title: Mapped[str | None] = mapped_column(String, nullable=True)
     # Nullable so chats created via the CLI (no logged-in user involved)
     # keep working -- only chats created through the authenticated API
-    # get a real owner.
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # get a real owner. ondelete="SET NULL": deleting a user (see
+    # app/api/v1/admin_users.py) must orphan their chats the same way a
+    # CLI-created chat already is, not block the delete (the database's
+    # default) or destroy that chat's history just because its owner's
+    # account was removed.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -71,14 +75,24 @@ class Citation(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id"), nullable=False)
-    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id"), nullable=True)
+    book_id: Mapped[int | None] = mapped_column(ForeignKey("books.id", ondelete="SET NULL"), nullable=True)
     # Mutually exclusive with book_id -- a citation comes from exactly
     # one corpus. Both nullable (rather than, say, a single polymorphic
     # "source_type" + "source_id" pair) so each keeps a real, normal
     # foreign key that the database and the ORM both understand and can
     # validate -- joining straight to Book or Paper, no manual dispatch
     # on a type string required anywhere this gets queried.
-    paper_id: Mapped[int | None] = mapped_column(ForeignKey("papers.id"), nullable=True)
+    #
+    # ondelete="SET NULL" on both: deleting a Book or Paper (see
+    # app/ingestion/delete_book.py / delete_paper.py) must null out any
+    # existing citation's reference to it rather than block the delete
+    # (the database's own default) or cascade into deleting the
+    # Message/Chat that citation belongs to (which would silently wipe
+    # someone's chat history just because a source was removed -- far
+    # more destructive than warranted). The citation's own apa_text and
+    # locator survive untouched either way, preserved as a historical
+    # record of what was cited even after the source itself is gone.
+    paper_id: Mapped[int | None] = mapped_column(ForeignKey("papers.id", ondelete="SET NULL"), nullable=True)
 
     # The exact text that was inside <CITATION>...</CITATION> in the answer,
     # e.g. "(Sommerville, 2011, p. 47)" or '(Moffat, 2026, "Positioning
