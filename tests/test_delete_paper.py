@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory() as tmp:
     original_qdrant_client = dp_module.QdrantClient
     original_chunks_dir = dp_module.PAPERS_CHUNKS_DIR
     original_pdf_dir = dp_module.PAPER_PDF_DIR
-    dp_module.QdrantClient = lambda url, api_key: qdrant
+    dp_module.QdrantClient = lambda url, api_key, timeout=None: qdrant
     dp_module.PAPERS_CHUNKS_DIR = chunks_dir
     dp_module.PAPER_PDF_DIR = pdf_dir
 

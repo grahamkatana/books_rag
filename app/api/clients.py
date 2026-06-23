@@ -8,7 +8,7 @@ use instead, which is also easier to test against with fakes.
 from openai import OpenAI
 from qdrant_client import QdrantClient
 
-from app.config import QDRANT_URL, QDRANT_API_KEY
+from app.config import QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT
 
 _openai_client: OpenAI | None = None
 _qdrant_client: QdrantClient | None = None
@@ -24,5 +24,5 @@ def get_openai_client() -> OpenAI:
 def get_qdrant_client() -> QdrantClient:
     global _qdrant_client
     if _qdrant_client is None:
-        _qdrant_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+        _qdrant_client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
     return _qdrant_client

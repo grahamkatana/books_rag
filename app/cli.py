@@ -18,7 +18,7 @@ import argparse
 from openai import OpenAI
 from qdrant_client import QdrantClient
 
-from app.config import QDRANT_URL, QDRANT_API_KEY, DEFAULT_CHAT_MODEL, DEFAULT_TOP_K
+from app.config import QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT, DEFAULT_CHAT_MODEL, DEFAULT_TOP_K
 from app.db.session import get_session
 from app.retrieval.query_engine import answer_question
 from app.logging_config import setup_logging
@@ -155,7 +155,7 @@ def cmd_pipeline_papers(args):
 
 def cmd_ask(args):
     openai_client = OpenAI()
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
 
     with get_session() as session:
         result = answer_question(

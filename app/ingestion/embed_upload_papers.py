@@ -17,7 +17,7 @@ Usage:
 from openai import OpenAI
 from qdrant_client import QdrantClient
 
-from app.config import PAPERS_CHUNKS_DIR, PAPERS_QDRANT_COLLECTION, QDRANT_URL, QDRANT_API_KEY
+from app.config import PAPERS_CHUNKS_DIR, PAPERS_QDRANT_COLLECTION, QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT
 from app.ingestion.embed_upload import ensure_collection, load_all_chunks, embed_and_upsert
 from app.logging_config import get_logger
 
@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 def main(force: bool = False):
     openai_client = OpenAI()
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
 
     ensure_collection(qdrant, collection_name=PAPERS_QDRANT_COLLECTION)
     chunks = load_all_chunks(chunks_dir=PAPERS_CHUNKS_DIR)

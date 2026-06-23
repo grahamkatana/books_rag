@@ -29,7 +29,7 @@ Usage:
 
 from qdrant_client import QdrantClient
 
-from app.config import QDRANT_URL, QDRANT_API_KEY, QDRANT_COLLECTION, PDF_DIR, CHUNKS_DIR
+from app.config import QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT, QDRANT_COLLECTION, PDF_DIR, CHUNKS_DIR
 from app.db.session import get_session
 from app.models.book import Book
 from app.ingestion.delete_common import (
@@ -46,7 +46,7 @@ def delete_book(source_key: str, delete_pdf: bool = False) -> dict:
     happened, not just what was attempted, so a caller (a Celery task,
     eventually) can tell a real deletion apart from a no-op against
     something that was already gone."""
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
 
     vectors_deleted = delete_vectors_by_source(qdrant, source_key, QDRANT_COLLECTION)
     chunk_file_deleted = delete_chunk_file(source_key, CHUNKS_DIR)

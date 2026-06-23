@@ -29,6 +29,12 @@ BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY")
 # Qdrant
 QDRANT_URL = os.environ.get("QDRANT_URL")
 QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY")
+# qdrant-client's own default (effectively a handful of seconds, via
+# httpx) is short enough that a filtered operation against a real,
+# grown library can exceed it -- confirmed in practice: delete_book's
+# count-before-delete step timed out against a production-sized
+# collection. 30s is a deliberately generous margin, not a tuned value.
+QDRANT_TIMEOUT = int(os.environ.get("QDRANT_TIMEOUT", "30"))
 QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "book_library")
 # Deliberately separate from QDRANT_COLLECTION -- papers and books never
 # share a collection, so a retrieval call for one corpus can't possibly
@@ -83,7 +89,24 @@ CROSSREF_MAILTO = os.environ.get("CROSSREF_MAILTO")
 # backend both default to the same Redis instance since there's no
 # reason to run two separate ones for a project this size; override
 # independently if that ever changes.
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
+REDIS_DB = os.environ.get("REDIS_DB", "0")
+
+# Built from the pieces above only when REDIS_URL itself isn't set
+# directly -- if a password is configured, it has to actually be in the
+# URL or every connection gets rejected with NOAUTH the moment the
+# Redis side starts requiring one (confirmed directly: an unauthenticated
+# connection to a --requirepass instance fails immediately, it doesn't
+# degrade gracefully). No password configured falls back to the
+# original no-auth URL, unchanged from before this existed.
+if REDIS_PASSWORD:
+    _default_redis_url = f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+else:
+    _default_redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+
+REDIS_URL = os.environ.get("REDIS_URL", _default_redis_url)
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
 

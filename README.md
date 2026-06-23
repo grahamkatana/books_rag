@@ -712,7 +712,7 @@ for papers yet -- a preprint and its published version aren't currently
 linked the way book editions are.
 
 
-`uv run alembic revision --autogenerate -m "message"`
-`uv run alembic upgrade head`
+Run a new migration: `uv run alembic revision --autogenerate -m "message"`
+Migrate: `uv run alembic upgrade head`
 
-`uv run celery -A app.worker.celery_app worker --loglevel=info --pool=solo`
+Run celery tasks: `uv run celery -A app.worker.celery_app worker --loglevel=info --pool=solo`

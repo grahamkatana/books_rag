@@ -21,10 +21,10 @@ import hashlib
 
 from openai import OpenAI
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, PayloadSchemaType
 
 from app.config import (
-    CHUNKS_DIR, QDRANT_COLLECTION, QDRANT_URL, QDRANT_API_KEY,
+    CHUNKS_DIR, QDRANT_COLLECTION, QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT,
     EMBEDDING_MODEL, EMBEDDING_DIM,
 )
 
@@ -38,6 +38,22 @@ def ensure_collection(qdrant: QdrantClient, collection_name: str = QDRANT_COLLEC
             vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
         )
         print(f"Created collection '{collection_name}' ({EMBEDDING_DIM}-dim, cosine).")
+
+    # Outside the "just created" branch on purpose -- this needs to run
+    # for an already-existing collection too, not just a fresh one.
+    # Every filtered call this project makes (search scoping, edition
+    # exclusion, and especially delete_book.py/delete_paper.py's
+    # delete-by-source) filters on this exact field. Without a payload
+    # index, Qdrant has to load the whole collection's payload data from
+    # disk to evaluate that filter -- fine when a collection is small,
+    # but exactly the kind of thing that quietly turns into a client-side
+    # read timeout once a library has grown. create_payload_index is
+    # idempotent -- safe to call on every run, not just the first.
+    qdrant.create_payload_index(
+        collection_name=collection_name,
+        field_name="source",
+        field_schema=PayloadSchemaType.KEYWORD,
+    )
 
 
 def load_all_chunks(chunks_dir=CHUNKS_DIR) -> list:
@@ -116,7 +132,7 @@ def embed_and_upsert(openai_client, qdrant: QdrantClient, chunks: list,
 
 def main(force: bool = False):
     openai_client = OpenAI()
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
 
     ensure_collection(qdrant)
     chunks = load_all_chunks()

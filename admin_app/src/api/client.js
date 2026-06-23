@@ -99,10 +99,6 @@ export function updateBook(id, fields) {
     body: JSON.stringify(fields),
   });
 }
-// No deleteBook on purpose -- the API doesn't offer it either. A Book
-// row has real Qdrant vectors and a chunk file nothing currently cleans
-// up; deleting just the row would leave those orphaned and still
-// searchable with no Book left to resolve their citation against.
 
 export function fetchPapers() {
   return request("/admin/papers/");
@@ -114,9 +110,23 @@ export function updatePaper(id, fields) {
     body: JSON.stringify(fields),
   });
 }
-// No deletePaper either, for the exact same reason as books: a Paper
-// row has real Qdrant vectors and a chunk file nothing currently cleans
-// up.
+
+// Both deletes enqueue a background job and return immediately with a
+// task_id -- they don't delete anything themselves, and the deletion
+// itself (Qdrant vectors, chunk file, DB row) isn't done by the time
+// this call resolves. Poll fetchJobStatus(task_id) to find out when it
+// actually finishes.
+export function deleteBook(id, { deletePdf = false } = {}) {
+  return request(`/admin/books/${id}?delete_pdf=${deletePdf}`, { method: "DELETE" });
+}
+
+export function deletePaper(id, { deletePdf = false } = {}) {
+  return request(`/admin/papers/${id}?delete_pdf=${deletePdf}`, { method: "DELETE" });
+}
+
+export function fetchJobStatus(taskId) {
+  return request(`/admin/jobs/${taskId}`);
+}
 
 export function fetchChats() {
   return request("/admin/chats/");

@@ -42,10 +42,10 @@ with tempfile.TemporaryDirectory() as tmp:
 
     originals = (db_module.QdrantClient, db_module.CHUNKS_DIR, db_module.PDF_DIR,
                  dp_module.QdrantClient, dp_module.PAPERS_CHUNKS_DIR, dp_module.PAPER_PDF_DIR)
-    db_module.QdrantClient = lambda url, api_key: qdrant
+    db_module.QdrantClient = lambda url, api_key, timeout=None: qdrant
     db_module.CHUNKS_DIR = chunks_dir
     db_module.PDF_DIR = pdf_dir
-    dp_module.QdrantClient = lambda url, api_key: qdrant
+    dp_module.QdrantClient = lambda url, api_key, timeout=None: qdrant
     dp_module.PAPERS_CHUNKS_DIR = papers_chunks_dir
     dp_module.PAPER_PDF_DIR = papers_pdf_dir
 

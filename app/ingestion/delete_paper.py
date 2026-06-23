@@ -24,7 +24,7 @@ Usage:
 
 from qdrant_client import QdrantClient
 
-from app.config import QDRANT_URL, QDRANT_API_KEY, PAPERS_QDRANT_COLLECTION, PAPER_PDF_DIR, PAPERS_CHUNKS_DIR
+from app.config import QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT, PAPERS_QDRANT_COLLECTION, PAPER_PDF_DIR, PAPERS_CHUNKS_DIR
 from app.db.session import get_session
 from app.models.paper import Paper
 from app.ingestion.delete_common import (
@@ -39,7 +39,7 @@ def delete_paper(source_key: str, delete_pdf: bool = False) -> dict:
     """The actual cleanup operation. Returns a summary dict of what was
     actually found and removed -- every field reflects what genuinely
     happened, not just what was attempted."""
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=QDRANT_TIMEOUT)
 
     vectors_deleted = delete_vectors_by_source(qdrant, source_key, PAPERS_QDRANT_COLLECTION)
     chunk_file_deleted = delete_chunk_file(source_key, PAPERS_CHUNKS_DIR)
