@@ -72,6 +72,36 @@ def cmd_embed(args):
     run(force=getattr(args, "force", False))
 
 
+def cmd_delete_book(args):
+    from app.ingestion.delete_book import delete_book
+    if not args.yes:
+        confirm = input(
+            f"This will permanently delete '{args.source_key}': its Qdrant vectors, chunk file, "
+            f"and database row{' and its source PDF' if args.delete_pdf else ''}. "
+            f"This cannot be undone. Type 'yes' to confirm: "
+        )
+        if confirm.strip().lower() != "yes":
+            print("Cancelled.")
+            return
+    summary = delete_book(args.source_key, delete_pdf=args.delete_pdf)
+    print(summary)
+
+
+def cmd_delete_paper(args):
+    from app.ingestion.delete_paper import delete_paper
+    if not args.yes:
+        confirm = input(
+            f"This will permanently delete '{args.source_key}': its Qdrant vectors, chunk file, "
+            f"and database row{' and its source PDF' if args.delete_pdf else ''}. "
+            f"This cannot be undone. Type 'yes' to confirm: "
+        )
+        if confirm.strip().lower() != "yes":
+            print("Cancelled.")
+            return
+    summary = delete_paper(args.source_key, delete_pdf=args.delete_pdf)
+    print(summary)
+
+
 def cmd_pipeline(args):
     # seed-books only needs to run once now: it creates a Book row for
     # any new file (filename-guessed, unverified) and never touches an
@@ -186,6 +216,18 @@ def main():
     embed_parser = sub.add_parser("embed", help="Embed chunks and upsert into Qdrant")
     embed_parser.add_argument("--force", action="store_true", help="Re-embed every chunk, even unchanged ones")
     embed_parser.set_defaults(func=cmd_embed)
+
+    delete_book_parser = sub.add_parser("delete-book", help="Permanently delete a book: vectors, chunk file, manifest entry, and DB row")
+    delete_book_parser.add_argument("source_key")
+    delete_book_parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
+    delete_book_parser.add_argument("--delete-pdf", action="store_true", help="Also remove the original PDF from pdfs/books/")
+    delete_book_parser.set_defaults(func=cmd_delete_book)
+
+    delete_paper_parser = sub.add_parser("delete-paper", help="Permanently delete a paper: vectors, chunk file, manifest entry, and DB row")
+    delete_paper_parser.add_argument("source_key")
+    delete_paper_parser.add_argument("--yes", action="store_true", help="Skip the interactive confirmation prompt")
+    delete_paper_parser.add_argument("--delete-pdf", action="store_true", help="Also remove the original PDF from pdfs/papers/")
+    delete_paper_parser.set_defaults(func=cmd_delete_paper)
 
     pipeline_parser = sub.add_parser("pipeline", help="Run report, seed-books, lookup-bibliography, chunk, and embed in sequence")
     pipeline_parser.add_argument("--force", action="store_true", help="Force the chunk and embed steps to reprocess everything")

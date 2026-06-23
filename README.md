@@ -710,3 +710,7 @@ it over its siblings are different facts.
 (repeatable) to pin specific ones directly. This concept doesn't exist
 for papers yet -- a preprint and its published version aren't currently
 linked the way book editions are.
+
+
+`uv run alembic revision --autogenerate -m "message"`
+`uv run alembic upgrade head`
