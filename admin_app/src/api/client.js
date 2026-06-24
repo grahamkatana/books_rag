@@ -25,10 +25,16 @@ function authHeaders() {
 }
 
 async function request(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      // FormData bodies need the browser to set their own
+      // multipart/form-data Content-Type (with the correct boundary)
+      // itself -- forcing application/json here would silently break
+      // every file upload, since the server would try to parse a
+      // multipart body as JSON.
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...authHeaders(),
       ...(options.headers || {}),
     },
@@ -126,6 +132,29 @@ export function deletePaper(id, { deletePdf = false } = {}) {
 
 export function fetchJobStatus(taskId) {
   return request(`/admin/jobs/${taskId}`);
+}
+
+// Both uploads send the raw File as multipart/form-data and, like
+// deleteBook/deletePaper, only enqueue a job -- they return as soon as
+// the file is saved and the pipeline task is queued, not once
+// ingestion actually finishes. Poll fetchJobStatus(task_id) for that.
+export function uploadBook(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request("/admin/books/upload", { method: "POST", body: formData });
+}
+
+export function uploadPaper(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request("/admin/papers/upload", { method: "POST", body: formData });
+}
+
+// Enqueues both the books and papers pipelines at once -- powers the
+// sidebar's Ingest button. Returns two separate task_ids (they're two
+// independent jobs); poll each one separately.
+export function triggerIngest({ force = false } = {}) {
+  return request(`/admin/ingest/?force=${force}`, { method: "POST" });
 }
 
 export function fetchChats() {

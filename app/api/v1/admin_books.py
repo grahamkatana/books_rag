@@ -9,6 +9,7 @@ Endpoints:
     GET    /api/v1/admin/books/<id>    get one book
     PUT    /api/v1/admin/books/<id>    update a book's bibliography
     DELETE /api/v1/admin/books/<id>    enqueue full deletion as a background job
+    POST   /api/v1/admin/books/upload  upload a new book PDF and enqueue the full ingestion pipeline
 
 A book's vectors, chunk file, and DB row are deleted together by
 app/ingestion/delete_book.py -- this endpoint never deletes anything
@@ -21,20 +22,31 @@ infrastructure existed -- offering just the DB-row half of the
 operation would have left Qdrant vectors and the chunk file orphaned
 forever, which is exactly why this took this long to add.
 
+Upload follows the same shape: the file is saved to pdfs/books/ and
+run_books_pipeline_task is enqueued -- the exact same report ->
+seed-books -> lookup-bibliography -> chunk -> embed sequence
+`uv run python ingest.py` runs, just triggered from here instead of a
+terminal. force=False always -- a freshly uploaded file has a
+source_key nothing has seen before, so there's nothing for force to
+need to override.
+
 A manual edit through here is the same kind of action as editing
 through /admin: it's a human having looked at the data, so it gets
 marked bibliography_verified=True and bibliography_source="manual"
 automatically, exactly like the Flask-Admin path does.
 """
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from marshmallow import Schema, fields
 
+from app.config import PDF_DIR
 from app.db.session import get_session
 from app.models.book import Book
 from app.auth.decorators import admin_required
 from app.api.v1.schemas import DeleteQuerySchema, JobQueuedSchema
+from app.api.v1.upload_common import save_uploaded_pdf
 
 blp = Blueprint(
     "admin_books", __name__,
@@ -161,4 +173,22 @@ class AdminBookDetail(MethodView):
 
         from app.worker.tasks import delete_book_task
         async_result = delete_book_task.delay(source_key, delete_pdf=query_args["delete_pdf"])
+        return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}
+
+
+@blp.route("/upload")
+class AdminBookUpload(MethodView):
+    @admin_required
+    @blp.response(202, JobQueuedSchema)
+    def post(self):
+        """Uploads a new book PDF to pdfs/books/ and enqueues the full
+        ingestion pipeline as a background job. Returns immediately
+        with a task_id -- poll GET /api/v1/admin/jobs/<task_id> for the
+        result. Send the file as multipart/form-data under the field
+        name "file"."""
+        destination = save_uploaded_pdf(request.files.get("file"), PDF_DIR)
+        source_key = destination.stem
+
+        from app.worker.tasks import run_books_pipeline_task
+        async_result = run_books_pipeline_task.delay(force=False)
         return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}

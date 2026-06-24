@@ -1,30 +1,38 @@
 """
 Admin-only endpoints for managing paper bibliography via the API.
-Mirrors admin_books.py exactly, including how DELETE works: it never
-deletes anything itself, it enqueues delete_paper_task
-(app/worker/tasks.py) and returns 202 with a task_id immediately. Poll
-GET /api/v1/admin/jobs/<task_id> for the result.
+Mirrors admin_books.py exactly, including how DELETE and upload work:
+DELETE never deletes anything itself, it enqueues delete_paper_task
+(app/worker/tasks.py) and returns 202 with a task_id immediately.
+Upload saves the file to pdfs/papers/ and enqueues
+run_papers_pipeline_task -- the exact same seed-papers ->
+lookup-paper-doi -> chunk-papers -> embed-papers sequence
+`uv run python ingest_papers.py` runs. Poll GET
+/api/v1/admin/jobs/<task_id> for either one's result.
 
 Endpoints:
     GET    /api/v1/admin/papers/        list every paper
     GET    /api/v1/admin/papers/<id>    get one paper
     PUT    /api/v1/admin/papers/<id>    update a paper's bibliography
     DELETE /api/v1/admin/papers/<id>    enqueue full deletion as a background job
+    POST   /api/v1/admin/papers/upload  upload a new paper PDF and enqueue the full ingestion pipeline
 """
 
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from marshmallow import Schema, fields
 
+from app.config import PAPER_PDF_DIR
 from app.db.session import get_session
 from app.models.paper import Paper
 from app.auth.decorators import admin_required
 from app.api.v1.schemas import DeleteQuerySchema, JobQueuedSchema
+from app.api.v1.upload_common import save_uploaded_pdf
 
 blp = Blueprint(
     "admin_papers", __name__,
     url_prefix="/api/v1/admin/papers",
-    description="Admin-only paper bibliography management (list/get/update/delete)",
+    description="Admin-only paper bibliography management (list/get/update/delete/upload)",
 )
 
 
@@ -131,4 +139,22 @@ class AdminPaperDetail(MethodView):
 
         from app.worker.tasks import delete_paper_task
         async_result = delete_paper_task.delay(source_key, delete_pdf=query_args["delete_pdf"])
+        return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}
+
+
+@blp.route("/upload")
+class AdminPaperUpload(MethodView):
+    @admin_required
+    @blp.response(202, JobQueuedSchema)
+    def post(self):
+        """Uploads a new paper PDF to pdfs/papers/ and enqueues the
+        full ingestion pipeline as a background job. Returns
+        immediately with a task_id -- poll GET
+        /api/v1/admin/jobs/<task_id> for the result. Send the file as
+        multipart/form-data under the field name "file"."""
+        destination = save_uploaded_pdf(request.files.get("file"), PAPER_PDF_DIR)
+        source_key = destination.stem
+
+        from app.worker.tasks import run_papers_pipeline_task
+        async_result = run_papers_pipeline_task.delay(force=False)
         return {"task_id": async_result.id, "source_key": source_key, "status": "queued"}

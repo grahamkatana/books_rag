@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { Pencil, Trash2, ShieldCheck, ShieldQuestion, BookOpen, Loader2 } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Pencil, Trash2, ShieldCheck, ShieldQuestion, BookOpen, Loader2, Upload } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { Checkbox } from "./ui/Checkbox";
@@ -9,7 +9,7 @@ import BookEditDialog from "./BookEditDialog";
 import SearchBar from "./SearchBar";
 import Pagination from "./Pagination";
 import { useSearchAndPaginate } from "../hooks/useSearchAndPaginate";
-import { fetchBooks, updateBook, deleteBook, UnauthorizedError } from "../api/client";
+import { fetchBooks, updateBook, deleteBook, uploadBook, UnauthorizedError } from "../api/client";
 import { pollJobUntilDone } from "../lib/pollJob";
 
 export default function BooksPage({ onSessionExpired }) {
@@ -24,11 +24,14 @@ export default function BooksPage({ onSessionExpired }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletePdf, setDeletePdf] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
-  // A Set of book ids currently mid-delete (job enqueued, awaiting the
-  // poll result) -- lets each row show its own "Deleting..." state
-  // independently, since a delete here is a background job, not
-  // something that finishes by the time the request returns.
   const [deletingIds, setDeletingIds] = useState(new Set());
+
+  // null, or { phase: "uploading" | "processing" | "done" | "error", text }
+  // -- a single slot rather than a list, since only one upload is in
+  // flight at a time from this page (the file input itself is disabled
+  // while one is running, see fileInputRef below).
+  const [uploadStatus, setUploadStatus] = useState(null);
+  const fileInputRef = useRef(null);
 
   const {
     query, setQuery, page, setPage, totalPages, totalCount, pageSize, items: pagedBooks,
@@ -89,15 +92,65 @@ export default function BooksPage({ onSessionExpired }) {
     }
   };
 
+  const handleFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // reset so selecting the same filename again still fires onChange
+    if (!file) return;
+
+    setUploadStatus({ phase: "uploading", text: `Uploading ${file.name}...` });
+    try {
+      const { task_id, source_key } = await uploadBook(file);
+      setUploadStatus({ phase: "processing", text: `Processing "${source_key}" -- this runs the full pipeline (bibliography lookup, chunking, embedding)...` });
+      await pollJobUntilDone(task_id, { timeoutMs: 10 * 60 * 1000 }); // a full pipeline run is much slower than a delete -- 10 min ceiling, not 30s
+      setUploadStatus({ phase: "done", text: `"${source_key}" ingested successfully.` });
+      await load();
+    } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        onSessionExpired();
+        return;
+      }
+      setUploadStatus({ phase: "error", text: err.message });
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto thin-scrollbar p-6">
-      <div className="mb-6">
-        <h1 className="text-lg font-semibold text-foreground">Books</h1>
-        <p className="text-sm text-muted-foreground">
-          Deleting a book runs as a background job -- its Qdrant vectors, chunk file, and
-          database row are all cleaned up together, not just the row.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold text-foreground">Books</h1>
+          <p className="text-sm text-muted-foreground">
+            Deleting a book runs as a background job -- its Qdrant vectors, chunk file, and
+            database row are all cleaned up together, not just the row.
+          </p>
+        </div>
+        <Button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadStatus?.phase === "uploading" || uploadStatus?.phase === "processing"}
+          className="shrink-0 gap-1.5"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Upload book
+        </Button>
+        <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileSelected} />
       </div>
+
+      {uploadStatus && (
+        <p
+          className={
+            "mb-4 flex items-center gap-2 text-sm rounded-md px-3 py-2 " +
+            (uploadStatus.phase === "error"
+              ? "text-destructive bg-destructive/10"
+              : uploadStatus.phase === "done"
+              ? "text-emerald-700 bg-emerald-50"
+              : "text-foreground bg-accent")
+          }
+        >
+          {(uploadStatus.phase === "uploading" || uploadStatus.phase === "processing") && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+          )}
+          {uploadStatus.text}
+        </p>
+      )}
 
       {loadError && (
         <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{loadError}</p>
@@ -174,7 +227,7 @@ export default function BooksPage({ onSessionExpired }) {
             {pagedBooks.length === 0 && (
               <TableRow>
                 <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                  {query ? "No books match your search." : "No books yet -- run the ingestion pipeline first."}
+                  {query ? "No books match your search." : "No books yet -- upload one, or run the ingestion pipeline."}
                 </TableCell>
               </TableRow>
             )}
