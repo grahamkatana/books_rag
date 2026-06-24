@@ -64,3 +64,46 @@ def run_papers_pipeline_task(self, force: bool = False) -> str:
     cmd_pipeline_papers(SimpleNamespace(force=force))
     logger.info("run_papers_pipeline_task finished (task_id=%s)", self.request.id)
     return "done"
+
+
+@celery_app.task(name="run_verification_pipeline_task", bind=True)
+def run_verification_pipeline_task(self, document_id: int, saved_path: str) -> dict:
+    """Runs the rest of the document-verification pipeline after the
+    upload endpoint has already done the fast, synchronous part
+    (creating the VerificationDocument row and saving the file) --
+    convert -> extract claims -> verify every claim, in that order.
+    Each stage already records its own failure in
+    VerificationDocument.status/error_message without raising, so this
+    task only needs to stop early if an earlier stage didn't succeed;
+    it doesn't need its own try/except to translate failures into
+    something else."""
+    from pathlib import Path
+    from app.ingestion.convert_docx import convert_uploaded_document
+    from app.agents.extract_claims import run_claim_extraction
+    from app.agents.verify_document import verify_document_claims
+
+    logger.info("run_verification_pipeline_task starting for document %s (task_id=%s)", document_id, self.request.id)
+
+    if not convert_uploaded_document(document_id, Path(saved_path)):
+        logger.info("run_verification_pipeline_task stopped at conversion for document %s", document_id)
+        return {"document_id": document_id, "stage": "converting", "succeeded": False}
+
+    claim_count = run_claim_extraction(document_id)
+    # run_claim_extraction returning 0 is ambiguous on its own (it means
+    # either "extraction genuinely found nothing checkable" or
+    # "extraction itself failed") -- check the document's own status,
+    # which extract_claims.py already set correctly in either case,
+    # rather than re-deriving that distinction here from a bare count.
+    from app.db.session import get_session
+    from app.models.verification import VerificationDocument
+    with get_session() as session:
+        doc = session.get(VerificationDocument, document_id)
+        extraction_failed = doc is not None and doc.status == "failed"
+
+    if extraction_failed:
+        logger.info("run_verification_pipeline_task stopped at extraction for document %s", document_id)
+        return {"document_id": document_id, "stage": "extracting_claims", "succeeded": False}
+
+    result = verify_document_claims(document_id)
+    logger.info("run_verification_pipeline_task finished for document %s: %s", document_id, result)
+    return {"document_id": document_id, "stage": "done", "succeeded": True, **result}

@@ -91,3 +91,40 @@ class ChatDetailSchema(Schema):
     title = fields.Str(allow_none=True)
     created_at = fields.DateTime()
     messages = fields.List(fields.Nested(MessageSchema))
+
+
+class ClaimEvidenceSchema(Schema):
+    book_id = fields.Int(allow_none=True)
+    paper_id = fields.Int(allow_none=True)
+    web_url = fields.Str(allow_none=True)
+    title = fields.Str(allow_none=True)
+    excerpt = fields.Str()
+    locator = fields.Str(allow_none=True)
+
+
+class ClaimVerificationSchema(Schema):
+    verdict = fields.Str()
+    confidence = fields.Str()
+    explanation = fields.Str()
+    evidence = fields.List(fields.Nested(ClaimEvidenceSchema))
+
+
+class ExtractedClaimSchema(Schema):
+    id = fields.Int()
+    text = fields.Str()
+    order_index = fields.Int()
+    verification = fields.Nested(ClaimVerificationSchema, allow_none=True)
+
+
+class VerificationDocumentSummarySchema(Schema):
+    id = fields.Int()
+    filename = fields.Str()
+    status = fields.Str()
+    error_message = fields.Str(allow_none=True)
+    created_at = fields.Str(allow_none=True)
+    claim_count = fields.Int()
+
+
+class VerificationDocumentDetailSchema(VerificationDocumentSummarySchema):
+    markdown = fields.Str(allow_none=True)
+    claims = fields.List(fields.Nested(ExtractedClaimSchema))

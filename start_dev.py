@@ -1,16 +1,32 @@
 """
-Starts the API server, the main frontend dev server, and the admin app
-dev server together -- a bare-host alternative to docker-compose for
-local development. One Ctrl+C stops all three cleanly. Opens a browser
-tab for each frontend automatically, once its dev server is actually
-ready to respond (not just "probably started by now").
+Starts the API server, the main frontend dev server, the admin app dev
+server, and the verify app dev server together -- a bare-host
+alternative to docker-compose for local development. One Ctrl+C stops
+all four cleanly. Opens a browser tab for each frontend automatically,
+once its dev server is actually ready to respond (not just "probably
+started by now").
+
+Before starting each service, this also clears anything already
+listening on its target port. That matters more than it might look
+like: if a previous run wasn't shut down cleanly -- the terminal closed
+directly instead of Ctrl+C, a crash, anything other than this script's
+own stop() -- the old process keeps running and keeps answering
+requests with whatever code it had loaded back then. A route that's
+genuinely in your source can still 404 in the browser if an old, stale
+server process is the one actually receiving the request. Pre-clearing
+the port removes that entire failure mode rather than relying on every
+shutdown having gone cleanly.
 
 Usage:
     uv run python dev_up.py
     uv run python dev_up.py --admin-path ../book_rag_admin
-    uv run python dev_up.py --skip-admin       (just the API + main frontend)
-    uv run python dev_up.py --skip-frontend    (just the API + admin app)
+    uv run python dev_up.py --verify-path ../book_rag_verify
+    uv run python dev_up.py --skip-admin       (skip just the admin app)
+    uv run python dev_up.py --skip-verify       (skip just the verify app)
+    uv run python dev_up.py --skip-frontend    (skip just the main frontend)
     uv run python dev_up.py --no-browser       (don't open any browser tabs)
+    uv run python dev_up.py --no-kill-stale    (don't pre-clear ports -- if something
+                                                 else legitimately needs to be on one of them)
 """
 
 import argparse
@@ -27,11 +43,11 @@ from pathlib import Path
 IS_WINDOWS = os.name == "nt"
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# ANSI colors to tell each service's output apart when all three are
+# ANSI colors to tell each service's output apart when all four are
 # interleaved in one terminal. Falls back gracefully either way -- even
-# without color support, the "[api]"/"[frontend]"/"[admin]" text prefix
-# alone is enough to tell streams apart.
-COLORS = {"api": "\033[36m", "frontend": "\033[35m", "admin": "\033[33m"}
+# without color support, the "[api]"/"[frontend]"/"[admin]"/"[verify]"
+# text prefix alone is enough to tell streams apart.
+COLORS = {"api": "\033[36m", "frontend": "\033[35m", "admin": "\033[33m", "verify": "\033[32m"}
 RESET = "\033[0m"
 
 
@@ -51,18 +67,83 @@ def wait_for_url(url: str, timeout: float = 20, interval: float = 0.3) -> bool:
     return False
 
 
+def find_pids_on_port(port: int) -> list[int]:
+    """Finds every process ID currently LISTENING on this port. Only
+    LISTENING, not TIME_WAIT or other transient states -- a TIME_WAIT
+    entry on Windows reports PID 0, which isn't a real, killable
+    process, and killing whatever else might transiently own a closing
+    connection on this port (rather than the actual listener) would be
+    pointless at best. Best-effort throughout: if netstat/lsof aren't
+    available or parsing fails for any reason, this returns an empty
+    list and the caller just proceeds exactly as it always did before
+    this existed -- a new service that fails to bind a genuinely
+    occupied port still fails with its own clear "address in use" error,
+    no worse off than before."""
+    pids = set()
+    try:
+        if IS_WINDOWS:
+            output = subprocess.run(
+                ["netstat", "-ano"], capture_output=True, text=True, shell=True
+            ).stdout
+            for line in output.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0] in ("TCP", "TCP6") and parts[3] == "LISTENING":
+                    local_addr = parts[1]  # e.g. "0.0.0.0:8000" or "[::]:8000"
+                    if local_addr.rsplit(":", 1)[-1] == str(port):
+                        pid_str = parts[-1]
+                        if pid_str.isdigit() and int(pid_str) != 0:
+                            pids.add(int(pid_str))
+        else:
+            output = subprocess.run(
+                ["lsof", "-t", "-i", f":{port}", "-sTCP:LISTEN"], capture_output=True, text=True
+            ).stdout
+            for line in output.splitlines():
+                if line.strip().isdigit():
+                    pids.add(int(line.strip()))
+    except Exception:
+        pass
+    return list(pids)
+
+
+def kill_stale_port(port: int, label: str):
+    """Kills anything already listening on this port before a new
+    service tries to bind it. See the module docstring for why this
+    exists -- in short, a previous run's process that wasn't shut down
+    cleanly can sit there indefinitely, silently serving stale code."""
+    pids = find_pids_on_port(port)
+    if not pids:
+        return
+    print(f"[{label}] port {port} is already in use by PID(s) {pids} -- stopping them first")
+    for pid in pids:
+        try:
+            if IS_WINDOWS:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+            else:
+                os.kill(pid, 9)
+        except Exception as e:
+            print(f"[{label}] couldn't stop PID {pid}: {e}")
+    time.sleep(1)  # give the OS a moment to actually release the port before the new process tries to bind it
+
+
 class Service:
-    def __init__(self, name, cmd, cwd, url=None):
+    def __init__(self, name, cmd, cwd, url=None, port=None):
         self.name = name
         self.cmd = cmd
         self.cwd = Path(cwd)
         self.url = url  # if set, dev_up.py will open this in a browser once it's ready
+        self.port = port  # if set, dev_up.py will clear anything already bound to it before starting
         self.process = None
 
-    def start(self) -> bool:
+    def start(self, kill_stale: bool = True) -> bool:
         if not self.cwd.exists():
             print(f"[{self.name}] SKIPPED -- directory not found: {self.cwd}")
             return False
+
+        if kill_stale and self.port is not None:
+            kill_stale_port(self.port, self.name)
 
         print(f"[{self.name}] starting: {' '.join(self.cmd)}  (in {self.cwd})")
         self.process = subprocess.Popen(
@@ -133,37 +214,59 @@ def check_tool(name: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Start the API, main frontend, and admin app together.")
+    parser = argparse.ArgumentParser(description="Start the API, main frontend, admin app, and verify app together.")
     parser.add_argument(
         "--admin-path",
         default=str(PROJECT_ROOT / "admin_app"),
         help="Path to the admin app folder (default: ./admin_app, inside this project)",
     )
+    parser.add_argument(
+        "--verify-path",
+        default=str(PROJECT_ROOT / "verify_app"),
+        help="Path to the verify app folder (default: ./verify_app, inside this project)",
+    )
     parser.add_argument("--skip-admin", action="store_true", help="Don't start the admin app")
+    parser.add_argument("--skip-verify", action="store_true", help="Don't start the verify app")
     parser.add_argument("--skip-frontend", action="store_true", help="Don't start the main frontend")
     parser.add_argument("--no-browser", action="store_true", help="Don't open any browser tabs automatically")
+    parser.add_argument("--no-kill-stale", action="store_true",
+                         help="Don't pre-clear target ports -- skip this if something else legitimately needs to be on one of them")
+    parser.add_argument("--api-port", type=int, default=8000, help="API server's port")
     parser.add_argument("--frontend-port", type=int, default=5173, help="Main frontend's dev server port")
     parser.add_argument("--admin-port", type=int, default=5174, help="Admin app's dev server port")
+    parser.add_argument("--verify-port", type=int, default=5175, help="Verify app's dev server port")
     args = parser.parse_args()
 
     check_tool("uv")
     check_tool("npm")
 
     npm_cmd = "npm.cmd" if IS_WINDOWS else "npm"
+    kill_stale = not args.no_kill_stale
 
-    services = [Service("api", ["uv", "run", "python", "server.py"], PROJECT_ROOT)]
+    services = [Service(
+        "api", ["uv", "run", "python", "server.py", "--port", str(args.api_port)], PROJECT_ROOT,
+        port=args.api_port,
+    )]
     if not args.skip_frontend:
         services.append(Service(
             "frontend", [npm_cmd, "run", "dev"], PROJECT_ROOT / "frontend",
             url=None if args.no_browser else f"http://localhost:{args.frontend_port}",
+            port=args.frontend_port,
         ))
     if not args.skip_admin:
         services.append(Service(
             "admin", [npm_cmd, "run", "dev"], args.admin_path,
             url=None if args.no_browser else f"http://localhost:{args.admin_port}",
+            port=args.admin_port,
+        ))
+    if not args.skip_verify:
+        services.append(Service(
+            "verify", [npm_cmd, "run", "dev"], args.verify_path,
+            url=None if args.no_browser else f"http://localhost:{args.verify_port}",
+            port=args.verify_port,
         ))
 
-    started = [s for s in services if s.start()]
+    started = [s for s in services if s.start(kill_stale=kill_stale)]
     if not started:
         print("Nothing started -- check the paths above.")
         return

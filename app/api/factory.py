@@ -46,6 +46,7 @@ def create_app() -> Flask:
     from app.api.v1.books import blp as books_blp
     from app.api.v1.papers import blp as papers_blp
     from app.api.v1.chats import blp as chats_blp
+    from app.api.v1.verification import blp as verification_blp
     from app.api.v1.ask import blp as ask_blp
     from app.api.v1.auth import blp as auth_blp
     from app.api.v1.admin_users import blp as admin_users_blp
@@ -58,6 +59,7 @@ def create_app() -> Flask:
     api.register_blueprint(books_blp)
     api.register_blueprint(papers_blp)
     api.register_blueprint(chats_blp)
+    api.register_blueprint(verification_blp)
     api.register_blueprint(ask_blp)
     api.register_blueprint(auth_blp)
     api.register_blueprint(admin_users_blp)

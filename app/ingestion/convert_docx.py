@@ -50,22 +50,63 @@ def save_upload(file_bytes: bytes, filename: str, document_id: int) -> Path:
     return saved_path
 
 
-def ingest_verification_document(file_bytes: bytes, filename: str, user_id: int | None = None) -> int:
-    """Creates the VerificationDocument row, saves the upload, converts
-    it to markdown, and updates the row's status throughout --
-    "uploaded" -> "converting" -> "extracting_claims" (ready for the
-    next stage) or "failed" (with error_message set, never raising past
-    this function -- a bad upload is an expected outcome to record, not
-    an exception for the caller to handle).
-
-    Returns the document's id either way, so a caller (the upload API
-    endpoint, eventually) always has something to point the user at,
-    whether conversion succeeded or not."""
+def create_verification_document(filename: str, user_id: int | None = None) -> int:
+    """Creates the VerificationDocument row only, status="uploaded" --
+    deliberately separated from saving the file or converting it, so
+    an API endpoint can do just this much (fast, synchronous) and hand
+    everything else off to a background job, the same shape as every
+    other upload-triggers-a-pipeline flow in this project."""
     with get_session() as session:
         doc = VerificationDocument(user_id=user_id, filename=filename, status="uploaded")
         session.add(doc)
         session.flush()
-        document_id = doc.id
+        return doc.id
+
+
+def convert_uploaded_document(document_id: int, saved_path: Path) -> bool:
+    """Converts an already-saved upload to markdown and advances
+    status: "converting" -> "extracting_claims" on success, "failed"
+    (with error_message set) otherwise. Returns whether it succeeded,
+    so a caller chaining further stages (claim extraction) knows
+    whether to proceed -- never raises, same pattern as every other
+    stage function in this pipeline."""
+    with get_session() as session:
+        doc = session.get(VerificationDocument, document_id)
+        if doc is None:
+            logger.error("convert_uploaded_document: no document with id %s", document_id)
+            return False
+        doc.status = "converting"
+
+    try:
+        markdown = convert_docx_to_markdown(saved_path)
+    except Exception as e:
+        logger.error("Failed to convert document %s to markdown: %s", document_id, e)
+        _mark_failed(document_id, f"Conversion to markdown failed: {e}")
+        return False
+
+    with get_session() as session:
+        doc = session.get(VerificationDocument, document_id)
+        doc.markdown = markdown
+        doc.status = "extracting_claims"
+
+    logger.info("Document %s converted successfully, %d markdown chars", document_id, len(markdown))
+    return True
+
+
+def ingest_verification_document(file_bytes: bytes, filename: str, user_id: int | None = None) -> int:
+    """Convenience wrapper running every stage above synchronously, in
+    sequence -- create the row, save the file, convert it. Useful for
+    tests, CLI use, or any caller that genuinely wants the old
+    all-in-one-call behavior; the API upload endpoint instead calls
+    create_verification_document() and save_upload() directly itself
+    (fast), then hands convert_uploaded_document() and everything after
+    it to a background job (slow) -- see app/worker/tasks.py's
+    run_verification_pipeline_task.
+
+    Returns the document's id regardless of whether saving or
+    conversion succeeded, so a caller always has something to point
+    the user at."""
+    document_id = create_verification_document(filename, user_id=user_id)
 
     try:
         saved_path = save_upload(file_bytes, filename, document_id)
@@ -74,23 +115,7 @@ def ingest_verification_document(file_bytes: bytes, filename: str, user_id: int 
         _mark_failed(document_id, f"Could not save the uploaded file: {e}")
         return document_id
 
-    with get_session() as session:
-        doc = session.get(VerificationDocument, document_id)
-        doc.status = "converting"
-
-    try:
-        markdown = convert_docx_to_markdown(saved_path)
-    except Exception as e:
-        logger.error("Failed to convert document %s (%s) to markdown: %s", document_id, filename, e)
-        _mark_failed(document_id, f"Conversion to markdown failed: {e}")
-        return document_id
-
-    with get_session() as session:
-        doc = session.get(VerificationDocument, document_id)
-        doc.markdown = markdown
-        doc.status = "extracting_claims"
-
-    logger.info("Document %s (%s) converted successfully, %d markdown chars", document_id, filename, len(markdown))
+    convert_uploaded_document(document_id, saved_path)
     return document_id
 
 

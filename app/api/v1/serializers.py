@@ -72,3 +72,63 @@ def paper_to_dict(p) -> dict:
         "abstract": p.abstract,
         "bibliography_verified": p.bibliography_verified,
     }
+
+
+def claim_evidence_to_dict(evidence) -> dict:
+    # evidence.book/.paper are real relationships (see app/models/
+    # verification.py), so the resolved title comes for free here --
+    # no second lookup needed, and no N+1 if the caller eager-loaded
+    # the chain, which verification_document_to_detail_dict below does
+    # simply by walking the ORM relationships it already has in hand.
+    if evidence.book is not None:
+        title = evidence.book.title
+    elif evidence.paper is not None:
+        title = evidence.paper.title
+    else:
+        title = evidence.web_title
+
+    return {
+        "book_id": evidence.book_id,
+        "paper_id": evidence.paper_id,
+        "web_url": evidence.web_url,
+        "title": title,
+        "excerpt": evidence.excerpt,
+        "locator": evidence.locator,
+    }
+
+
+def claim_verification_to_dict(verification) -> dict:
+    return {
+        "verdict": verification.verdict,
+        "confidence": verification.confidence,
+        "explanation": verification.explanation,
+        "evidence": [claim_evidence_to_dict(e) for e in verification.evidence],
+    }
+
+
+def extracted_claim_to_dict(claim) -> dict:
+    return {
+        "id": claim.id,
+        "text": claim.text,
+        "order_index": claim.order_index,
+        "verification": claim_verification_to_dict(claim.verification) if claim.verification else None,
+    }
+
+
+def verification_document_to_summary_dict(doc) -> dict:
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "status": doc.status,
+        "error_message": doc.error_message,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "claim_count": len(doc.claims),
+    }
+
+
+def verification_document_to_detail_dict(doc) -> dict:
+    return {
+        **verification_document_to_summary_dict(doc),
+        "markdown": doc.markdown,
+        "claims": [extracted_claim_to_dict(c) for c in doc.claims],
+    }
