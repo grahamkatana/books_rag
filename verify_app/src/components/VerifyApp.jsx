@@ -5,7 +5,7 @@ import { Badge } from "./ui/Badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/Dialog";
 import { fetchDocuments, fetchDocument, uploadDocument, deleteDocument, UnauthorizedError } from "../api/client";
 import { pollDocumentUntilDone } from "../lib/pollDocument";
-import VerdictBadge from "./VerdictBadge";
+import DocumentViewer from "./DocumentViewer";
 
 const STATUS_LABELS = {
   uploaded: "Queued",
@@ -215,16 +215,16 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
         )}
       </aside>
 
-      <main className="flex-1 overflow-y-auto thin-scrollbar p-6">
+      <main className="flex-1 overflow-hidden flex flex-col">
         {!selectedId ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             Select a document, or upload a new one.
           </div>
         ) : detailLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="p-6 text-sm text-muted-foreground">Loading...</p>
         ) : selectedDoc ? (
-          <div className="max-w-3xl">
-            <div className="mb-6 flex items-start justify-between gap-4">
+          <>
+            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-border shrink-0">
               <div>
                 <h1 className="text-lg font-semibold text-foreground">{selectedDoc.filename}</h1>
                 <div className="mt-1"><StatusBadge status={selectedDoc.status} /></div>
@@ -239,55 +239,46 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
               </Button>
             </div>
 
-            {selectedDoc.status === "failed" && (
-              <p className="mb-4 text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-                {selectedDoc.error_message || "Verification failed."}
+            {selectedDoc.error_message && (
+              <p
+                className={
+                  "mx-6 mt-4 text-sm rounded-md px-3 py-2 shrink-0 " +
+                  (selectedDoc.status === "failed"
+                    ? "text-destructive bg-destructive/10"
+                    : "text-amber-700 bg-amber-50")
+                }
+              >
+                {selectedDoc.error_message}
               </p>
             )}
 
             {selectedDoc.claims.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="p-6 text-sm text-muted-foreground">
                 {selectedDoc.status === "done"
                   ? "No checkable claims were found in this document."
                   : "Claims will appear here as they're extracted and verified."}
               </p>
-            ) : (
-              <div className="space-y-4">
+            ) : !selectedDoc.markdown ? (
+              // Status is still converting/extracting -- markdown isn't
+              // ready yet, so there's nothing to annotate against. Fall
+              // back to the same flat list a still-running document
+              // already showed before DocumentViewer existed.
+              <div className="flex-1 overflow-y-auto thin-scrollbar p-6 space-y-3 max-w-2xl mx-auto w-full">
                 {selectedDoc.claims.map((claim) => (
-                  <div key={claim.id} className="rounded-lg border border-border p-4">
-                    <p className="text-sm text-foreground mb-2">{claim.text}</p>
-                    {claim.verification ? (
-                      <div className="space-y-2">
-                        <VerdictBadge verdict={claim.verification.verdict} confidence={claim.verification.confidence} />
-                        <p className="text-sm text-muted-foreground">{claim.verification.explanation}</p>
-                        {claim.verification.evidence.length > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            {claim.verification.evidence.map((ev, i) => (
-                              <div key={i} className="text-xs text-muted-foreground border-l-2 border-border pl-2.5">
-                                <span className="font-medium text-foreground">
-                                  {ev.title}{ev.locator ? `, ${ev.locator}` : ""}
-                                </span>
-                                {ev.web_url && (
-                                  <a href={ev.web_url} target="_blank" rel="noreferrer" className="ml-1 text-primary underline">
-                                    (web)
-                                  </a>
-                                )}
-                                <p className="mt-0.5">{ev.excerpt}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Verifying...
-                      </span>
-                    )}
+                  <div key={claim.id} className="rounded-lg border border-border p-3">
+                    <p className="text-sm text-foreground mb-1.5">{claim.text}</p>
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Verifying...
+                    </span>
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="flex-1 overflow-hidden">
+                <DocumentViewer markdown={selectedDoc.markdown} claims={selectedDoc.claims} />
+              </div>
             )}
-          </div>
+          </>
         ) : null}
       </main>
 

@@ -1,29 +1,39 @@
 """
 Claim verification: the third stage of the verification pipeline, after
 extraction (app/agents/extract_claims.py). One agent, not several --
-the web search capability is a TOOL this agent can choose to call, not
-a separate agent, because deciding whether the corpus already answers a
-claim is part of the verification judgment itself, not a distinct task
-with its own failure mode the way extraction and verification are from
-each other.
+web search and academic search are TOOLS this agent can choose between,
+not separate agents, because deciding whether the corpus already
+answers a claim (and if not, which kind of external search actually
+fits it) is part of the verification judgment itself, not a distinct
+task with its own failure mode the way extraction and verification are
+from each other.
 
 Corpus evidence is gathered BEFORE the agent runs, via the exact same
 dual-corpus retrieval query_engine.py already uses (embed_query +
 search_chunks(corpus="both")) -- no new retrieval logic, this is the
 same infrastructure the chat itself uses, pointed at a claim instead of
-a question. The agent only reaches for Brave (the same search_brave()
-lookup_bibliography.py already calls) when it judges the corpus
-evidence doesn't actually address the claim -- using your own library
-first, the web as a genuine fallback, not a default.
+a question. Two fallback tools exist for when the corpus doesn't
+actually address a claim: search_web (the same search_brave()
+lookup_bibliography.py already calls) for general factual/statistical
+claims, and search_academic_papers (Crossref's works database, the
+same registry app/ingestion/lookup_paper_doi.py already resolves real
+papers against) for claims that look like they're citing a specific
+study or author -- a thesis literature review is full of exactly that
+kind of claim, and a personal book/paper library will essentially
+never contain every paper someone else's bibliography cites. General
+web search is a weak tool for finding a specific academic paper; this
+gives the agent a second, better-suited tool for that specific case
+rather than forcing every external lookup through one generic search.
 """
 
 from dataclasses import dataclass, field
 from typing import Literal
 
+import requests
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
-from app.config import DEFAULT_CHAT_MODEL, DEFAULT_TOP_K
+from app.config import DEFAULT_CHAT_MODEL, DEFAULT_TOP_K, CROSSREF_MAILTO
 from app.api.clients import get_openai_client, get_qdrant_client
 from app.db.session import get_session
 from app.models.book import Book
@@ -32,9 +42,12 @@ from app.models.verification import ExtractedClaim, ClaimVerification, ClaimEvid
 from app.retrieval.query_engine import embed_query, search_chunks
 from app.retrieval.citations import build_locator
 from app.ingestion.lookup_bibliography import search_brave
+from app.ingestion.lookup_paper_doi import format_authors, extract_year
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+CROSSREF_WORKS_URL = "https://api.crossref.org/works"
 
 Verdict = Literal["supported", "partially_supported", "contradicted", "unverifiable"]
 Confidence = Literal["high", "medium", "low"]
@@ -77,9 +90,17 @@ VERIFICATION_SYSTEM_PROMPT = (
     "Assign confidence based on how directly the evidence speaks to the claim and how much "
     "of it agrees -- 'low' confidence is correct and expected when evidence is thin or mixed, "
     "do not inflate confidence to seem more certain than the evidence supports. "
-    "You have a search_web tool. Use it ONLY if the provided corpus evidence does not "
-    "address the claim at all -- do not use it if the corpus evidence is already sufficient "
-    "to reach a verdict, even a low-confidence one. "
+    "You have two fallback tools for when the provided corpus evidence does not address the "
+    "claim at all -- do not use either one if the corpus evidence is already sufficient to "
+    "reach a verdict, even a low-confidence one. "
+    "Use search_academic_papers when the claim cites, or appears to paraphrase, a specific "
+    "study, author, or finding (e.g. 'Smith (2023) found that...', or a statistic that reads "
+    "like it came from a particular study) -- this searches an actual academic registry "
+    "(Crossref), which is far more likely to contain a specific paper than general web search "
+    "is, and an empty result from it is itself informative: it means the cited source isn't in "
+    "that registry either, not just that this library doesn't have it. "
+    "Use search_web for general factual, statistical, or current-events claims that aren't "
+    "tied to a specific academic source. "
     "Cite every evidence item you actually relied on in evidence_cited, by its number in the "
     "list. Never cite an evidence item that doesn't actually support your stated verdict."
 )
@@ -129,15 +150,53 @@ def gather_corpus_evidence(claim_text: str, top_k: int = DEFAULT_TOP_K) -> list[
     return evidence
 
 
+def search_crossref(query: str, count: int = 5) -> list[dict]:
+    """A general, relevance-ranked search across Crossref's works
+    database -- deliberately different from
+    lookup_paper_doi.py's crossref_search_by_title(), which is built to
+    identify ONE specific paper precisely by an exact title match. This
+    one's job is finding several candidate papers that might support
+    or contradict a claim, the same role search_brave() plays for
+    general web evidence, just scoped to an actual academic registry
+    instead of the open web. Returns whatever Crossref has, even if
+    nothing's a strong match -- relevance judgment belongs to the
+    calling agent, the same way it already judges corpus evidence."""
+    try:
+        params = {"query": query, "rows": count}
+        if CROSSREF_MAILTO:
+            params["mailto"] = CROSSREF_MAILTO
+        response = requests.get(CROSSREF_WORKS_URL, params=params, timeout=15)
+        response.raise_for_status()
+        items = (response.json().get("message") or {}).get("items", [])
+    except requests.RequestException as e:
+        logger.warning("Crossref search failed for query %r: %s", query, e)
+        return []
+
+    results = []
+    for item in items:
+        title = (item.get("title") or [""])[0]
+        if not title:
+            continue
+        results.append({
+            "title": title,
+            "authors": format_authors(item.get("author")),
+            "year": extract_year(item),
+            "doi": item.get("DOI"),
+        })
+    return results
+
+
 def search_web_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
-    """Searches the web for evidence about the claim. Only use this if
-    the corpus evidence already provided doesn't address the claim at
-    all. A standalone function (registered onto the agent in
-    build_verification_agent() below) rather than an inline @agent.tool
-    closure, specifically so its actual behavior -- appending to
-    ctx.deps.all_evidence with correctly-continued indices, handling a
-    failed or empty search -- is directly testable without needing to
-    drive it through the agent's tool-calling machinery at all."""
+    """Searches the general web for evidence about the claim. Best for
+    factual, statistical, or general claims -- NOT for claims that cite
+    a specific academic study or author, where search_academic_papers
+    is the better-suited tool. A standalone function (registered onto
+    the agent in build_verification_agent() below) rather than an
+    inline @agent.tool closure, specifically so its actual behavior --
+    appending to ctx.deps.all_evidence with correctly-continued
+    indices, handling a failed or empty search -- is directly testable
+    without needing to drive it through the agent's tool-calling
+    machinery at all."""
     try:
         results = search_brave(query, count=5)
     except Exception as e:
@@ -164,6 +223,51 @@ def search_web_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
     return "\n\n".join(lines)
 
 
+def search_academic_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
+    """Searches Crossref's academic works database for papers relevant
+    to the claim. Use this INSTEAD of search_web when the claim cites,
+    or appears to paraphrase, a specific study, author, or finding --
+    general web search rarely surfaces the actual paper for something
+    like that, while Crossref's registry is built specifically to
+    contain it (if it's findable at all -- the result may legitimately
+    be empty, which itself is useful information: it means the claim's
+    cited source isn't in Crossref's index either, not just that this
+    library doesn't have it). Same evidence-list mechanics as
+    search_web_impl: indices continue from whatever's already in
+    ctx.deps.all_evidence, corpus or web alike, so the agent's final
+    citation indices always resolve against one single, consistently-
+    numbered list regardless of which tool (or none) supplied a given
+    piece of evidence."""
+    results = search_crossref(query, count=5)
+
+    if not results:
+        return "No matching papers found in Crossref for that query."
+
+    start_index = len(ctx.deps.all_evidence) + 1
+    lines = []
+    for i, r in enumerate(results):
+        excerpt_parts = [r["title"]]
+        if r.get("authors"):
+            excerpt_parts.append(r["authors"])
+        if r.get("year"):
+            excerpt_parts.append(str(r["year"]))
+        excerpt = ", ".join(excerpt_parts)
+
+        doi_url = f"https://doi.org/{r['doi']}" if r.get("doi") else None
+        ctx.deps.all_evidence.append({
+            "source": "web",
+            "book_id": None,
+            "paper_id": None,
+            "title": r["title"],
+            "excerpt": excerpt,
+            "locator": None,
+            "web_url": doi_url,
+            "web_title": r["title"],
+        })
+        lines.append(f"[{start_index + i}] {excerpt}" + (f"\n{doi_url}" if doi_url else ""))
+    return "\n\n".join(lines)
+
+
 def build_verification_agent(model: str = DEFAULT_CHAT_MODEL) -> Agent:
     agent = Agent(
         f"openai-chat:{model}",
@@ -172,6 +276,7 @@ def build_verification_agent(model: str = DEFAULT_CHAT_MODEL) -> Agent:
         deps_type=VerificationDeps,
     )
     agent.tool(search_web_impl)
+    agent.tool(search_academic_impl)
     return agent
 
 
@@ -202,9 +307,23 @@ def run_verification(claim_id: int) -> bool:
     """Reads the claim, verifies it, and persists a ClaimVerification
     row plus one ClaimEvidence row per cited source. Returns True on
     success, False on failure -- failures are logged, not raised, so a
-    caller verifying many claims in sequence (the Celery task, once
-    built) can continue past one claim's failure rather than abort the
-    whole document."""
+    caller verifying many claims in sequence (verify_document_claims)
+    can continue past one claim's failure rather than abort the whole
+    document.
+
+    A failure still gets a real ClaimVerification row, with
+    verdict="error" and the actual exception message as the
+    explanation -- this is deliberate, not a relaxed version of the
+    happy path. Without it, a claim that errored out (a transient rate
+    limit, a quota exhausted mid-document) is stored identically to one
+    that simply hasn't been verified yet: both would have
+    verification=None, and a caller has no way to tell "still queued"
+    apart from "this one broke and isn't coming back." verdict="error"
+    is never something the LLM itself produces (it's outside
+    VerificationVerdict's Literal type entirely) -- it only ever comes
+    from this except block, so its presence on a row unambiguously
+    means the agent call itself failed, not that it reached a low-
+    confidence conclusion."""
     with get_session() as session:
         claim = session.get(ExtractedClaim, claim_id)
         if claim is None:
@@ -216,6 +335,13 @@ def run_verification(claim_id: int) -> bool:
         verdict, all_evidence = verify_claim_text(claim_text)
     except Exception as e:
         logger.error("Verification failed for claim %s: %s", claim_id, e)
+        with get_session() as session:
+            session.add(ClaimVerification(
+                claim_id=claim_id,
+                verdict="error",
+                confidence="low",
+                explanation=f"Verification failed: {e}",
+            ))
         return False
 
     with get_session() as session:

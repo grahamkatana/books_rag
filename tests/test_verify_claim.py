@@ -48,6 +48,52 @@ assert deps_fail.all_evidence == []
 assert "failed" in output_fail.lower()
 print("OK")
 
+# --- search_crossref: parsing logic, mocked network call ---
+print("\n--- search_crossref ---")
+import requests as _requests
+
+fake_response = SimpleNamespace(
+    raise_for_status=lambda: None,
+    json=lambda: {"message": {"items": [
+        {"title": ["A Relevant Paper"], "author": [{"given": "Jane", "family": "Smith"}],
+         "published-print": {"date-parts": [[2023, 1, 1]]}, "DOI": "10.1/abc"},
+        {"title": [""], "DOI": "10.9/no-title"},  # no title -- must be skipped, not crash
+    ]}},
+)
+with patch.object(vc.requests, "get", return_value=fake_response) as mock_get:
+    results = vc.search_crossref("a query", count=5)
+assert len(results) == 1, "the no-title item must be skipped"
+assert results[0]["title"] == "A Relevant Paper"
+assert results[0]["year"] == 2023
+assert results[0]["doi"] == "10.1/abc"
+assert mock_get.call_args.kwargs["params"]["query"] == "a query"
+assert mock_get.call_args.kwargs["params"]["rows"] == 5
+
+with patch.object(vc.requests, "get", side_effect=_requests.RequestException("boom")):
+    assert vc.search_crossref("anything", count=5) == [], "a network failure must return [], not raise"
+print("OK")
+
+# --- search_academic_impl, directly, with a fake RunContext stand-in ---
+print("\n--- search_academic_impl ---")
+deps_acad = vc.VerificationDeps(all_evidence=[{"source": "corpus", "title": "Existing", "excerpt": "x",
+                                               "locator": None, "book_id": 1, "paper_id": None,
+                                               "web_url": None, "web_title": None}])
+with patch.object(vc, "search_crossref", return_value=[
+    {"title": "A Relevant Paper", "authors": "Smith, J.", "year": 2023, "doi": "10.1/abc"},
+]):
+    output_acad = vc.search_academic_impl(SimpleNamespace(deps=deps_acad), "claim about a specific study")
+assert len(deps_acad.all_evidence) == 2
+assert deps_acad.all_evidence[1]["web_url"] == "https://doi.org/10.1/abc"
+assert deps_acad.all_evidence[1]["title"] == "A Relevant Paper"
+assert "[2]" in output_acad, "index must continue from existing evidence count, not restart at 1"
+
+deps_acad_empty = vc.VerificationDeps(all_evidence=[])
+with patch.object(vc, "search_crossref", return_value=[]):
+    output_acad_empty = vc.search_academic_impl(SimpleNamespace(deps=deps_acad_empty), "nothing findable")
+assert deps_acad_empty.all_evidence == []
+assert "no matching papers" in output_acad_empty.lower()
+print("OK")
+
 # --- gather_corpus_evidence, real in-memory Qdrant + fake embeddings ---
 print("\n--- gather_corpus_evidence ---")
 with get_session() as session:
@@ -191,7 +237,11 @@ try:
             claim3_id = claim3.id
         assert vc.run_verification(claim3_id) is False
         with get_session() as session:
-            assert session.get(ExtractedClaim, claim3_id).verification is None
+            v = session.get(ExtractedClaim, claim3_id).verification
+            assert v is not None, "a failure must be recorded as a real row, not left as None"
+            assert v.verdict == "error"
+            assert "simulated failure" in v.explanation
+            assert len(v.evidence) == 0
         print("Failure path OK")
 
         assert vc.run_verification(999999) is False

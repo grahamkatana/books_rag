@@ -1,1 +1,3 @@
 *.csv
+verification_uploads/*.docx
+verification_reports/*.md

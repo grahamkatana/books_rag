@@ -107,3 +107,20 @@ def run_verification_pipeline_task(self, document_id: int, saved_path: str) -> d
     result = verify_document_claims(document_id)
     logger.info("run_verification_pipeline_task finished for document %s: %s", document_id, result)
     return {"document_id": document_id, "stage": "done", "succeeded": True, **result}
+
+
+@celery_app.task(name="rerun_verification_task", bind=True)
+def rerun_verification_task(self, document_id: int, from_extraction: bool = True) -> dict:
+    """Re-runs verification (or extraction+verification) for a document
+    that's already been through the pipeline once -- see
+    app/agents/rerun_verification.py for the full reasoning on the two
+    modes. Wrapped as its own task, separate from
+    run_verification_pipeline_task, since it doesn't need (and
+    shouldn't need) a saved_path argument at all -- the markdown is
+    already on the row from the first run."""
+    from app.agents.rerun_verification import rerun_verification
+    logger.info("rerun_verification_task starting for document %s (task_id=%s, from_extraction=%s)",
+                document_id, self.request.id, from_extraction)
+    result = rerun_verification(document_id, from_extraction=from_extraction)
+    logger.info("rerun_verification_task finished for document %s: %s", document_id, result)
+    return result

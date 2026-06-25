@@ -48,6 +48,18 @@ EXTRACTION_SYSTEM_PROMPT = (
     "Do NOT extract: opinions, value judgments, transitional or structural sentences "
     "(e.g. 'This chapter discusses...'), rhetorical questions, or claims so general "
     "they aren't really checkable (e.g. 'software is important'). "
+    "Do NOT extract bare labels, headings, table cell contents, or standalone date/time "
+    "references with no subject or assertion attached (e.g. a timeline row reading just "
+    "'August 2026', or a section heading) -- these are document structure, not claims, "
+    "even when they read as a sentence fragment in isolation. "
+    "Do NOT extract statements describing THIS document's own aims, scope, research "
+    "design, methodology, or intended contributions (e.g. 'This study aims to...', "
+    "'The contributions of this study include...', 'Semi-structured interviews will be "
+    "conducted with...', 'The research instrument is...'). These describe what the "
+    "author plans or intends for the current, not-yet-completed work -- they are not "
+    "facts about the external world, and cannot be meaningfully checked against any "
+    "external source, since the only thing such a statement could be checked against "
+    "is the document making it. "
     "Quote each claim VERBATIM, character-for-character, exactly as it appears in the "
     "source text -- never paraphrase or summarize it, even slightly. If a sentence "
     "contains a checkable claim embedded in non-checkable framing, quote only the "
@@ -109,17 +121,35 @@ def extract_claims_from_section(section_text: str, agent: Agent | None = None) -
     return [item.text for item in result.output.claims]
 
 
-def extract_claims(markdown: str, agent: Agent | None = None) -> list[str]:
+def extract_claims(markdown: str, agent: Agent | None = None) -> tuple[list[str], int, int]:
     """Splits the full document and extracts claims section by section,
     returning them in document order. One agent instance is built once
     and reused across all sections (a fresh Agent per section would
     work identically but rebuilds the same system prompt/config
-    pointlessly for every call)."""
+    pointlessly for every call).
+
+    Returns (claim_texts, failed_section_count, total_section_count).
+    Each section's extraction is isolated: a transient failure on one
+    section (a rate limit, a network blip) is logged and skipped, not
+    allowed to abort the whole document's extraction. This matters
+    concretely once a document is long enough to need many sections --
+    a 20-30 page document easily needs 25-30 sequential extraction
+    calls, and the odds of at least one of them hitting a transient
+    error are far higher than for a short document needing only one or
+    two. Without this, that one failure would previously fail the
+    entire document, discarding every claim already successfully
+    extracted from every other section."""
     agent = agent or build_extraction_agent()
     all_claims: list[str] = []
-    for section in split_into_sections(markdown):
-        all_claims.extend(extract_claims_from_section(section, agent=agent))
-    return all_claims
+    sections = split_into_sections(markdown)
+    failed_sections = 0
+    for i, section in enumerate(sections):
+        try:
+            all_claims.extend(extract_claims_from_section(section, agent=agent))
+        except Exception as e:
+            failed_sections += 1
+            logger.warning("Claim extraction failed for section %d/%d, skipping it: %s", i + 1, len(sections), e)
+    return all_claims, failed_sections, len(sections)
 
 
 def run_claim_extraction(document_id: int) -> int:
@@ -127,7 +157,14 @@ def run_claim_extraction(document_id: int) -> int:
     as ExtractedClaim rows, and advances status to "verifying" -- or
     "failed" with error_message set, never raising past this function,
     the same pattern convert_docx.py's ingest_verification_document()
-    already follows. Returns how many claims were extracted."""
+    already follows. Returns how many claims were extracted.
+
+    Only fails the whole document if EVERY section's extraction call
+    failed (a sustained outage or bad credentials, not a one-off
+    blip) -- a partial failure still proceeds with whatever claims
+    were actually extracted, with a note left on error_message so the
+    gap is visible rather than silently invisible, even though the
+    document itself isn't marked failed."""
     with get_session() as session:
         doc = session.get(VerificationDocument, document_id)
         if doc is None:
@@ -140,19 +177,33 @@ def run_claim_extraction(document_id: int) -> int:
         return 0
 
     try:
-        claim_texts = extract_claims(markdown)
+        claim_texts, failed_sections, total_sections = extract_claims(markdown)
     except Exception as e:
         logger.error("Claim extraction failed for document %s: %s", document_id, e)
         _mark_failed(document_id, f"Claim extraction failed: {e}")
+        return 0
+
+    if total_sections > 0 and failed_sections == total_sections:
+        _mark_failed(
+            document_id,
+            f"Claim extraction failed on every section ({failed_sections}/{total_sections}) -- "
+            "likely a sustained API problem (quota, outage, bad credentials), not a one-off blip.",
+        )
         return 0
 
     with get_session() as session:
         doc = session.get(VerificationDocument, document_id)
         for i, text in enumerate(claim_texts):
             session.add(ExtractedClaim(document_id=document_id, text=text, order_index=i))
+        if failed_sections:
+            doc.error_message = (
+                f"{failed_sections}/{total_sections} section(s) of this document could not be processed "
+                "during claim extraction -- claims from those sections are missing entirely, not just unverified."
+            )
         doc.status = "verifying"
 
-    logger.info("Document %s: extracted %d claim(s)", document_id, len(claim_texts))
+    logger.info("Document %s: extracted %d claim(s) (%d/%d sections failed)",
+                document_id, len(claim_texts), failed_sections, total_sections)
     return len(claim_texts)
 
 
