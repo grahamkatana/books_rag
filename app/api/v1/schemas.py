@@ -102,11 +102,21 @@ class ClaimEvidenceSchema(Schema):
     locator = fields.Str(allow_none=True)
 
 
+class ClaimCrossCheckSchema(Schema):
+    agrees = fields.Bool()
+    verdict = fields.Str()
+    confidence = fields.Str()
+    explanation = fields.Str()
+    is_checkable_claim = fields.Bool()
+    model = fields.Str()
+
+
 class ClaimVerificationSchema(Schema):
     verdict = fields.Str()
     confidence = fields.Str()
     explanation = fields.Str()
     evidence = fields.List(fields.Nested(ClaimEvidenceSchema))
+    cross_check = fields.Nested(ClaimCrossCheckSchema, allow_none=True)
 
 
 class ExtractedClaimSchema(Schema):

@@ -124,3 +124,19 @@ def rerun_verification_task(self, document_id: int, from_extraction: bool = True
     result = rerun_verification(document_id, from_extraction=from_extraction)
     logger.info("rerun_verification_task finished for document %s: %s", document_id, result)
     return result
+
+
+@celery_app.task(name="cross_check_document_task", bind=True)
+def cross_check_document_task(self, document_id: int, verdicts_to_check: list[str] | None = None) -> dict:
+    """Cross-checks every reviewable claim in a document using a
+    different model provider (Claude) than the primary verification --
+    see app/agents/cross_check_claim.py for the full reasoning. A
+    document's worth of claims means a document's worth of sequential
+    model calls, same scale concern as the primary verification
+    pipeline, hence its own background task rather than something
+    called inline."""
+    from app.agents.cross_check_claim import cross_check_document
+    logger.info("cross_check_document_task starting for document %s (task_id=%s)", document_id, self.request.id)
+    result = cross_check_document(document_id, verdicts_to_check=verdicts_to_check)
+    logger.info("cross_check_document_task finished for document %s: %s", document_id, result)
+    return result

@@ -716,3 +716,6 @@ Run a new migration: `uv run alembic revision --autogenerate -m "message"`
 Migrate: `uv run alembic upgrade head`
 
 Run celery tasks: `uv run celery -A app.worker.celery_app worker --loglevel=info --pool=solo`
+
+uv run python scripts/cross_check_verification.py --document-id 1
+uv run python scripts/cross_check_verification.py --document-id 1 --verdicts contradicted supported

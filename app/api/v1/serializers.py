@@ -97,12 +97,24 @@ def claim_evidence_to_dict(evidence) -> dict:
     }
 
 
+def claim_cross_check_to_dict(cross_check) -> dict:
+    return {
+        "agrees": cross_check.agrees,
+        "verdict": cross_check.verdict,
+        "confidence": cross_check.confidence,
+        "explanation": cross_check.explanation,
+        "is_checkable_claim": cross_check.is_checkable_claim,
+        "model": cross_check.model,
+    }
+
+
 def claim_verification_to_dict(verification) -> dict:
     return {
         "verdict": verification.verdict,
         "confidence": verification.confidence,
         "explanation": verification.explanation,
         "evidence": [claim_evidence_to_dict(e) for e in verification.evidence],
+        "cross_check": claim_cross_check_to_dict(verification.cross_check) if verification.cross_check else None,
     }
 
 

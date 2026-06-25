@@ -21,6 +21,15 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-large")
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "3072"))
 DEFAULT_CHAT_MODEL = os.environ.get("DEFAULT_CHAT_MODEL", "gpt-5.4-mini")
 
+# Used by app/agents/cross_check_claim.py -- an independent second
+# opinion on a claim verification, deliberately from a different model
+# provider than the primary verification agent (which uses
+# DEFAULT_CHAT_MODEL via OpenAI). Two same-provider models share
+# correlated blind spots; a genuinely different model is a meaningfully
+# stronger check on the same reasoning.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+CROSS_CHECK_MODEL = os.environ.get("CROSS_CHECK_MODEL", "claude-sonnet-4-6")
+
 # Brave Search (used for automatic bibliography lookup -- optional, see
 # app/ingestion/lookup_bibliography.py. Without this set, that step is
 # skipped and seed_books.py falls back to its filename heuristic.)
