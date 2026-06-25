@@ -60,6 +60,15 @@ class VerificationDocument(Base):
 
     filename: Mapped[str] = mapped_column(String, nullable=False)
     markdown: Mapped[str | None] = mapped_column(Text, nullable=True)  # set once Docling conversion succeeds
+    # Set by app/agents/document_context.py, between conversion and
+    # extraction -- a short, document-level orientation (what kind of
+    # document this is, what it says about its own aims/methodology)
+    # that later extraction/verification calls use as context. Best-
+    # effort and optional: a failure gathering this never blocks the
+    # pipeline, it just means later stages proceed with slightly less
+    # situational awareness, the same as they always did before this
+    # stage existed.
+    document_context: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # "uploaded" -> "converting" -> "extracting_claims" -> "verifying" -> "done" | "failed"
     # -- a plain string, not an Enum column: this list will grow as the

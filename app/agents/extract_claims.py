@@ -65,7 +65,10 @@ EXTRACTION_SYSTEM_PROMPT = (
     "contains a checkable claim embedded in non-checkable framing, quote only the "
     "checkable portion verbatim. "
     "If a section contains no genuinely checkable claims, return an empty list -- "
-    "do not invent claims to have something to return."
+    "do not invent claims to have something to return. "
+    "You may sometimes be given document-level context before the actual section text, clearly "
+    "marked as such -- use it to understand the document, but only ever quote claims verbatim "
+    "from the section text itself, never from the context."
 )
 
 
@@ -112,21 +115,36 @@ def split_into_sections(markdown: str, max_chars: int = MAX_SECTION_CHARS) -> li
     return sections
 
 
-def extract_claims_from_section(section_text: str, agent: Agent | None = None) -> list[str]:
+def extract_claims_from_section(section_text: str, agent: Agent | None = None, document_context: str | None = None) -> list[str]:
     """Runs the extraction agent against one section, returning the
     claim texts only -- the caller doesn't need ExtractedClaimItem's
-    wrapper, just the strings, to build ExtractedClaim rows from."""
+    wrapper, just the strings, to build ExtractedClaim rows from.
+
+    document_context, when available (see app/agents/document_context.py),
+    is prepended ahead of the actual section text, clearly delineated
+    from it -- the model still only quotes verbatim from the section
+    text itself, the context is orientation, not source material."""
     agent = agent or build_extraction_agent()
-    result = agent.run_sync(section_text)
+    prompt = section_text
+    if document_context:
+        prompt = (
+            f"Document context (for your understanding only -- never quote claims from this part):\n"
+            f"{document_context}\n\n---\n\nSection text to extract claims from:\n{section_text}"
+        )
+    result = agent.run_sync(prompt)
     return [item.text for item in result.output.claims]
 
 
-def extract_claims(markdown: str, agent: Agent | None = None) -> tuple[list[str], int, int]:
+def extract_claims(markdown: str, agent: Agent | None = None, document_context: str | None = None) -> tuple[list[str], int, int]:
     """Splits the full document and extracts claims section by section,
     returning them in document order. One agent instance is built once
     and reused across all sections (a fresh Agent per section would
     work identically but rebuilds the same system prompt/config
     pointlessly for every call).
+
+    document_context is passed through to every section call unchanged
+    -- see app/agents/document_context.py for what it is and why it
+    exists.
 
     Returns (claim_texts, failed_section_count, total_section_count).
     Each section's extraction is isolated: a transient failure on one
@@ -145,7 +163,7 @@ def extract_claims(markdown: str, agent: Agent | None = None) -> tuple[list[str]
     failed_sections = 0
     for i, section in enumerate(sections):
         try:
-            all_claims.extend(extract_claims_from_section(section, agent=agent))
+            all_claims.extend(extract_claims_from_section(section, agent=agent, document_context=document_context))
         except Exception as e:
             failed_sections += 1
             logger.warning("Claim extraction failed for section %d/%d, skipping it: %s", i + 1, len(sections), e)
@@ -171,13 +189,14 @@ def run_claim_extraction(document_id: int) -> int:
             logger.error("run_claim_extraction: no document with id %s", document_id)
             return 0
         markdown = doc.markdown
+        document_context = doc.document_context
 
     if not markdown:
         _mark_failed(document_id, "No markdown available -- conversion may not have completed.")
         return 0
 
     try:
-        claim_texts, failed_sections, total_sections = extract_claims(markdown)
+        claim_texts, failed_sections, total_sections = extract_claims(markdown, document_context=document_context)
     except Exception as e:
         logger.error("Claim extraction failed for document %s: %s", document_id, e)
         _mark_failed(document_id, f"Claim extraction failed: {e}")

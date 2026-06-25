@@ -29,6 +29,7 @@ document.
 
 from app.db.session import get_session
 from app.models.verification import VerificationDocument
+from app.agents.document_context import run_document_context
 from app.agents.extract_claims import run_claim_extraction
 from app.agents.verify_document import verify_document_claims
 from app.logging_config import get_logger
@@ -67,6 +68,11 @@ def rerun_verification(document_id: int, from_extraction: bool = True) -> dict:
         doc.error_message = None
 
     if from_extraction:
+        # Best-effort, same as the main pipeline -- a fresh context
+        # pass makes sense alongside a fresh extraction, but a failure
+        # here must never block re-extraction from proceeding.
+        logger.info("rerun_verification: refreshing document context for document %s", document_id)
+        run_document_context(document_id)
         logger.info("rerun_verification: re-extracting claims for document %s", document_id)
         run_claim_extraction(document_id)
 

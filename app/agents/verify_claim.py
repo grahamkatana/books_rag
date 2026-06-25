@@ -101,6 +101,11 @@ VERIFICATION_SYSTEM_PROMPT = (
     "that registry either, not just that this library doesn't have it. "
     "Use search_web for general factual, statistical, or current-events claims that aren't "
     "tied to a specific academic source. "
+    "You may sometimes be given document-level context before the claim, clearly marked as "
+    "such. If it says the document describes its own aims, scope, or methodology, and the claim "
+    "you're checking matches that self-description, mark it 'unverifiable' regardless of the "
+    "evidence -- it is not contradicted, since it was never a claim about the external world to "
+    "begin with, and no evidence could appropriately settle it either way. "
     "Cite every evidence item you actually relied on in evidence_cited, by its number in the "
     "list. Never cite an evidence item that doesn't actually support your stated verdict."
 )
@@ -289,15 +294,26 @@ def format_evidence_list(evidence: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def verify_claim_text(claim_text: str, agent: Agent | None = None, top_k: int = DEFAULT_TOP_K) -> tuple[VerificationVerdict, list[dict]]:
+def verify_claim_text(claim_text: str, agent: Agent | None = None, top_k: int = DEFAULT_TOP_K, document_context: str | None = None) -> tuple[VerificationVerdict, list[dict]]:
     """Gathers corpus evidence, runs the verification agent (which may
-    call search_web itself), and returns the verdict alongside the
-    final, complete evidence list (corpus + any web results the agent
-    actually triggered) -- ready for the caller to persist."""
+    call search_web or search_academic_papers itself), and returns the
+    verdict alongside the final, complete evidence list (corpus + any
+    web/academic results the agent actually triggered) -- ready for the
+    caller to persist.
+
+    document_context, when available (see app/agents/document_context.py),
+    is prepended ahead of the claim and evidence, clearly delineated --
+    most useful for the same case it helps extraction with: recognizing
+    that a claim is the document's own self-referential statement about
+    its own aims/methodology, which no evidence could ever appropriately
+    settle, rather than treating it as a normal external claim that
+    happens to have thin evidence."""
     agent = agent or build_verification_agent()
     deps = VerificationDeps(all_evidence=gather_corpus_evidence(claim_text, top_k=top_k))
 
     prompt = f"Claim to verify:\n{claim_text}\n\nEvidence:\n{format_evidence_list(deps.all_evidence)}"
+    if document_context:
+        prompt = f"Document context (for your understanding only):\n{document_context}\n\n---\n\n{prompt}"
     result = agent.run_sync(prompt, deps=deps)
 
     return result.output, deps.all_evidence
@@ -330,9 +346,10 @@ def run_verification(claim_id: int) -> bool:
             logger.error("run_verification: no claim with id %s", claim_id)
             return False
         claim_text = claim.text
+        document_context = claim.document.document_context
 
     try:
-        verdict, all_evidence = verify_claim_text(claim_text)
+        verdict, all_evidence = verify_claim_text(claim_text, document_context=document_context)
     except Exception as e:
         logger.error("Verification failed for claim %s: %s", claim_id, e)
         with get_session() as session:

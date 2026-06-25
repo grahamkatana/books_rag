@@ -71,14 +71,15 @@ def run_verification_pipeline_task(self, document_id: int, saved_path: str) -> d
     """Runs the rest of the document-verification pipeline after the
     upload endpoint has already done the fast, synchronous part
     (creating the VerificationDocument row and saving the file) --
-    convert -> extract claims -> verify every claim, in that order.
-    Each stage already records its own failure in
-    VerificationDocument.status/error_message without raising, so this
-    task only needs to stop early if an earlier stage didn't succeed;
-    it doesn't need its own try/except to translate failures into
-    something else."""
+    convert -> gather document context (best-effort) -> extract claims
+    -> verify every claim, in that order. Each stage already records
+    its own failure in VerificationDocument.status/error_message
+    without raising, so this task only needs to stop early if an
+    earlier stage didn't succeed; it doesn't need its own try/except
+    to translate failures into something else."""
     from pathlib import Path
     from app.ingestion.convert_docx import convert_uploaded_document
+    from app.agents.document_context import run_document_context
     from app.agents.extract_claims import run_claim_extraction
     from app.agents.verify_document import verify_document_claims
 
@@ -87,6 +88,11 @@ def run_verification_pipeline_task(self, document_id: int, saved_path: str) -> d
     if not convert_uploaded_document(document_id, Path(saved_path)):
         logger.info("run_verification_pipeline_task stopped at conversion for document %s", document_id)
         return {"document_id": document_id, "stage": "converting", "succeeded": False}
+
+    # Best-effort, deliberately not gating the rest of the pipeline on
+    # success -- see app/agents/document_context.py's own docstring for
+    # why a failure here should never take the whole document down.
+    run_document_context(document_id)
 
     claim_count = run_claim_extraction(document_id)
     # run_claim_extraction returning 0 is ambiguous on its own (it means

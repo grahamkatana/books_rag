@@ -34,7 +34,7 @@ original_extract_from_section = ec.extract_claims_from_section
 call_count = {"n": 0}
 
 
-def flaky_extraction(section_text, agent=None):
+def flaky_extraction(section_text, agent=None, document_context=None):
     call_count["n"] += 1
     if call_count["n"] == 2:  # the second section call fails; the rest succeed
         raise RuntimeError("simulated transient failure on one section")
@@ -82,7 +82,7 @@ with get_session() as session:
     doc_id = doc.id
 
 original_extract_claims = ec.extract_claims
-ec.extract_claims = lambda markdown, agent=None: (["Claim one.", "Claim two.", "Claim three."], 0, 1)
+ec.extract_claims = lambda markdown, agent=None, document_context=None: (["Claim one.", "Claim two.", "Claim three."], 0, 1)
 try:
     count = ec.run_claim_extraction(doc_id)
     assert count == 3
@@ -98,7 +98,7 @@ try:
     print("\n--- no markdown: fails immediately, extraction never attempted ---")
     extraction_called = {"value": False}
 
-    def track_extraction(markdown, agent=None):
+    def track_extraction(markdown, agent=None, document_context=None):
         extraction_called["value"] = True
         return ([], 0, 0)
 
@@ -119,7 +119,7 @@ try:
     print("OK")
 
     print("\n--- extract_claims itself raises: failed, no partial claims written ---")
-    def raise_extraction_error(markdown, agent=None):
+    def raise_extraction_error(markdown, agent=None, document_context=None):
         raise RuntimeError("simulated agent failure")
 
     ec.extract_claims = raise_extraction_error
@@ -140,7 +140,7 @@ try:
     print("OK")
 
     print("\n--- partial section failure: proceeds with what succeeded, leaves a visible note, NOT marked failed ---")
-    ec.extract_claims = lambda markdown, agent=None: (["Claim from a good section."], 12, 30)
+    ec.extract_claims = lambda markdown, agent=None, document_context=None: (["Claim from a good section."], 12, 30)
     with get_session() as session:
         doc4 = VerificationDocument(filename="partial_failure.docx", status="extracting_claims", markdown="content")
         session.add(doc4)
@@ -159,7 +159,7 @@ try:
     print("OK")
 
     print("\n--- every single section fails: this DOES fail the document (a sustained problem, not a blip) ---")
-    ec.extract_claims = lambda markdown, agent=None: ([], 30, 30)
+    ec.extract_claims = lambda markdown, agent=None, document_context=None: ([], 30, 30)
     with get_session() as session:
         doc5 = VerificationDocument(filename="total_failure.docx", status="extracting_claims", markdown="content")
         session.add(doc5)

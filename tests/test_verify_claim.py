@@ -203,7 +203,7 @@ try:
 
     original_verify = vc.verify_claim_text
     try:
-        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6: (good_verdict, good_evidence)
+        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None: (good_verdict, good_evidence)
         assert vc.run_verification(claim_id) is True
         with get_session() as session:
             v = session.get(ExtractedClaim, claim_id).verification
@@ -221,13 +221,13 @@ try:
             session.add(claim2)
             session.flush()
             claim2_id = claim2.id
-        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6: (bad_verdict, good_evidence)
+        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None: (bad_verdict, good_evidence)
         assert vc.run_verification(claim2_id) is True, "an out-of-range citation must not fail verification itself"
         with get_session() as session:
             assert len(session.get(ExtractedClaim, claim2_id).verification.evidence) == 0
         print("Out-of-range citation handled OK")
 
-        def raise_error(claim_text, agent=None, top_k=6):
+        def raise_error(claim_text, agent=None, top_k=6, document_context=None):
             raise RuntimeError("simulated failure")
         vc.verify_claim_text = raise_error
         with get_session() as session:

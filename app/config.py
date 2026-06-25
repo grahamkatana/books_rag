@@ -30,6 +30,27 @@ DEFAULT_CHAT_MODEL = os.environ.get("DEFAULT_CHAT_MODEL", "gpt-5.4-mini")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 CROSS_CHECK_MODEL = os.environ.get("CROSS_CHECK_MODEL", "claude-sonnet-4-6")
 
+# Used by app/agents/document_context.py -- a cheap, fast pass over the
+# whole document BEFORE extraction/verification begin, giving both
+# later stages document-level awareness (what kind of document this
+# is, what it says about its own aims/methodology) instead of each
+# section-level call discovering that piecemeal with no memory of what
+# came before. Deliberately a much cheaper model than either the
+# extraction or verification agent -- this is a classification/
+# orientation task, not one that benefits from frontier reasoning.
+# Gemini 2.5 Flash-Lite has a genuine free tier (1,500 requests/day,
+# no credit card) as of mid-2026, which is the actual point: this
+# stage should cost close to nothing per document.
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
+CONTEXT_MODEL = os.environ.get("CONTEXT_MODEL", "gemini-2.5-flash-lite")
+# Gemini's context window is large enough (1M tokens) to take a whole
+# document in one call for most real documents, but an unbounded input
+# still risks runaway cost/latency on a pathological one -- this caps
+# it to a representative sample (abstract, intro, and well into the
+# body for most theses/papers) rather than truncating to something too
+# short to usefully classify the document by.
+MAX_CONTEXT_INPUT_CHARS = int(os.environ.get("MAX_CONTEXT_INPUT_CHARS", "100000"))
+
 # Brave Search (used for automatic bibliography lookup -- optional, see
 # app/ingestion/lookup_bibliography.py. Without this set, that step is
 # skipped and seed_books.py falls back to its filename heuristic.)
