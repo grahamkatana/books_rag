@@ -45,7 +45,8 @@ export function annotateMarkdown(markdown, claims) {
   for (const { claim, start, end } of accepted) {
     html += markdown.slice(pos, start);
     const verdict = claim.verification ? claim.verification.verdict : "pending";
-    html += `<mark data-claim-id="${claim.id}" data-verdict="${verdict}">${markdown.slice(start, end)}</mark>`;
+    const crossChecked = !!claim.verification?.cross_check;
+    html += `<mark data-claim-id="${claim.id}" data-verdict="${verdict}" data-cross-checked="${crossChecked}">${markdown.slice(start, end)}</mark>`;
     pos = end;
   }
   html += markdown.slice(pos);

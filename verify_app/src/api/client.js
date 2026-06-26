@@ -105,3 +105,20 @@ export function uploadDocument(file) {
 export function deleteDocument(id) {
   return request(`/verification/${id}`, { method: "DELETE" });
 }
+
+// Completion for this one is detectable the exact same way the original
+// upload's pipeline is -- the document's own status reaches "done" or
+// "failed" again, so pollDocumentUntilDone (already used for upload)
+// works here unchanged, no new polling logic needed.
+export function rerunDocument(id, { fromExtraction = true } = {}) {
+  return request(`/verification/${id}/rerun?from_extraction=${fromExtraction}`, { method: "POST" });
+}
+
+// Different from rerun: this never changes the document's own status
+// (it's reviewing already-settled verdicts, not running the pipeline),
+// so it returns the specific claim_ids it will touch instead --
+// pollClaimsCrossChecked (lib/pollDocument.js) watches for those.
+export function crossCheckDocument(id, { verdicts = null } = {}) {
+  const params = verdicts ? verdicts.map((v) => `verdicts=${v}`).join("&") : "";
+  return request(`/verification/${id}/cross-check${params ? `?${params}` : ""}`, { method: "POST" });
+}

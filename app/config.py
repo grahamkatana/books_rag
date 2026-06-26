@@ -55,6 +55,7 @@ MAX_CONTEXT_INPUT_CHARS = int(os.environ.get("MAX_CONTEXT_INPUT_CHARS", "100000"
 # app/ingestion/lookup_bibliography.py. Without this set, that step is
 # skipped and seed_books.py falls back to its filename heuristic.)
 BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY")
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY", "your_serpapi_key_here")
 
 # Qdrant
 QDRANT_URL = os.environ.get("QDRANT_URL")

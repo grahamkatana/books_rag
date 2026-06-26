@@ -75,8 +75,13 @@ CONTEXT_SYSTEM_PROMPT = (
 
 
 def build_context_agent(model: str = CONTEXT_MODEL) -> Agent:
+    # return Agent(
+    #     f"google:{model}",
+    #     output_type=DocumentContext,
+    #     system_prompt=CONTEXT_SYSTEM_PROMPT,
+    # )
     return Agent(
-        f"google:{model}",
+        f"openai-chat:{model}",
         output_type=DocumentContext,
         system_prompt=CONTEXT_SYSTEM_PROMPT,
     )

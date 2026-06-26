@@ -28,12 +28,33 @@ import json
 from openai import OpenAI
 import requests
 
-from app.config import BRAVE_API_KEY, DEFAULT_CHAT_MODEL
+from app.config import BRAVE_API_KEY, DEFAULT_CHAT_MODEL, SERPAPI_API_KEY 
 from app.db.session import get_session
 from app.models.book import Book
 from app.ingestion.bibliography_utils import coerce_bibliography_fields
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+SERPI_API_SEARCH_URL = "https://serpapi.com/search"
+
+def search_serpapi(query: str, count: int = 5) -> list:
+    """
+    Fallback search using SerpApi (Google Search engine).
+    Returns a list of dictionaries matching the 'organic_results' schema.
+    """
+    response = requests.get(
+        SERPI_API_SEARCH_URL,
+        params={
+            "engine": "google",
+            "q": query,
+            "num": count,
+            "api_key": SERPAPI_API_KEY
+        },
+        timeout=15
+    )
+    response.raise_for_status()
+    
+    # SerpApi stores the main web links in the 'organic_results' array
+    return response.json().get("organic_results", [])
 
 
 def search_brave(query: str, count: int = 5) -> list:

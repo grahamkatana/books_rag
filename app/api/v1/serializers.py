@@ -142,5 +142,6 @@ def verification_document_to_detail_dict(doc) -> dict:
     return {
         **verification_document_to_summary_dict(doc),
         "markdown": doc.markdown,
+        "document_context": doc.document_context,
         "claims": [extracted_claim_to_dict(c) for c in doc.claims],
     }

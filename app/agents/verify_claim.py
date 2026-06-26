@@ -41,7 +41,7 @@ from app.models.paper import Paper
 from app.models.verification import ExtractedClaim, ClaimVerification, ClaimEvidence
 from app.retrieval.query_engine import embed_query, search_chunks
 from app.retrieval.citations import build_locator
-from app.ingestion.lookup_bibliography import search_brave
+from app.ingestion.lookup_bibliography import search_brave, search_serpapi
 from app.ingestion.lookup_paper_doi import format_authors, extract_year
 from app.logging_config import get_logger
 
@@ -202,31 +202,47 @@ def search_web_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
     indices, handling a failed or empty search -- is directly testable
     without needing to drive it through the agent's tool-calling
     machinery at all."""
+    
+    results = None
+    
+    # Primary attempt: Brave Search
     try:
         results = search_brave(query, count=5)
     except Exception as e:
-        logger.warning("search_web tool call failed for query %r: %s", query, e)
-        return "Web search failed -- reach a verdict using only the corpus evidence already provided."
+        logger.warning("search_brave failed for query %r: %s. Falling back to SerpApi.", query, e)
+        
+        # Fallback attempt: SerpApi
+        try:
+            results = search_serpapi(query, count=5) 
+        except Exception as serp_e:
+            logger.warning("search_serpapi fallback failed for query %r: %s", query, serp_e)
+            return "Web search failed -- reach a verdict using only the corpus evidence already provided."
 
     if not results:
         return "No web results found for that query."
 
     start_index = len(ctx.deps.all_evidence) + 1
     lines = []
+    
     for i, r in enumerate(results):
+        # Handle key discrepancies between Brave (description, url) and SerpApi (snippet, link)
+        title = r.get("title", "")
+        excerpt = r.get("description") or r.get("snippet", "")
+        url = r.get("url") or r.get("link", "")
+        
         ctx.deps.all_evidence.append({
             "source": "web",
             "book_id": None,
             "paper_id": None,
-            "title": r.get("title", ""),
-            "excerpt": r.get("description", ""),
+            "title": title,
+            "excerpt": excerpt,
             "locator": None,
-            "web_url": r.get("url"),
-            "web_title": r.get("title"),
+            "web_url": url,
+            "web_title": title,
         })
-        lines.append(f"[{start_index + i}] {r.get('title', '')}\n{r.get('description', '')}\n{r.get('url', '')}")
+        lines.append(f"[{start_index + i}] {title}\n{excerpt}\n{url}")
+        
     return "\n\n".join(lines)
-
 
 def search_academic_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
     """Searches Crossref's academic works database for papers relevant

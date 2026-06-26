@@ -137,4 +137,31 @@ class VerificationDocumentSummarySchema(Schema):
 
 class VerificationDocumentDetailSchema(VerificationDocumentSummarySchema):
     markdown = fields.Str(allow_none=True)
+    document_context = fields.Str(allow_none=True)
     claims = fields.List(fields.Nested(ExtractedClaimSchema))
+
+
+class RerunQuerySchema(Schema):
+    from_extraction = fields.Bool(load_default=True, metadata={
+        "description": "Re-extract claims from scratch before re-verifying (default), "
+                        "or keep existing claims and only re-verify"
+    })
+
+
+class CrossCheckQuerySchema(Schema):
+    verdicts = fields.List(fields.Str(), load_default=None, metadata={
+        "description": "Only cross-check claims with these verdicts (default: every reviewable verdict)"
+    })
+
+
+class CrossCheckQueuedSchema(Schema):
+    task_id = fields.Str()
+    document_id = fields.Int()
+    # The specific claim ids this cross-check pass will actually touch --
+    # returned so the caller can poll GET /api/v1/verification/<id> and
+    # watch for cross_check appearing on exactly these claims, rather
+    # than needing a separate job-status lookup (which would need its
+    # own per-user scoping anyway, since the generic /admin/jobs/
+    # endpoint is admin-only and this feature isn't an admin action).
+    claim_ids = fields.List(fields.Int())
+    status = fields.Str()

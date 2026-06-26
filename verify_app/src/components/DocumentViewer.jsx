@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { FileQuestion } from "lucide-react";
+import { FileQuestion, Maximize2, Minimize2, Info } from "lucide-react";
 import { annotateMarkdown } from "../lib/annotateMarkdown";
 import ClaimPanel from "./ClaimPanel";
 
@@ -21,7 +21,13 @@ const HIGHLIGHT_CLASSES = {
   pending: "bg-blue-100/50 hover:bg-blue-200/50",
 };
 
-export default function DocumentViewer({ markdown, claims }) {
+export default function DocumentViewer({
+  markdown,
+  claims,
+  documentContext,
+  isPresentationMode = false,
+  onTogglePresentationMode,
+}) {
   const [selectedClaimId, setSelectedClaimId] = useState(null);
 
   const { annotated, matchedIds } = useMemo(
@@ -33,10 +39,34 @@ export default function DocumentViewer({ markdown, claims }) {
   const unmatchedClaims = claims.filter((c) => !matchedIds.has(c.id));
   const selectedClaim = selectedClaimId != null ? claimsById.get(selectedClaimId) : null;
 
+  // Presentation mode widens the reading column and bumps the type up
+  // a size, the same two changes that make the most difference for an
+  // actual "reader" feel -- everything else about the rendering stays
+  // identical, it's still the same annotated document underneath.
+  const proseWidth = isPresentationMode ? "max-w-3xl" : "max-w-2xl";
+  const proseSize = isPresentationMode ? "prose-base" : "prose-sm";
+
   return (
-    <div className="flex h-full">
+    <div className="relative flex h-full">
+      {onTogglePresentationMode && (
+        <button
+          onClick={onTogglePresentationMode}
+          title={isPresentationMode ? "Exit presentation mode" : "Presentation mode"}
+          className="fixed top-4 right-4 z-50 flex h-8 w-8 items-center justify-center rounded-full bg-card border border-border shadow-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          {isPresentationMode ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
+      )}
+
       <div className="flex-1 overflow-y-auto thin-scrollbar">
-        <div className="prose prose-sm max-w-2xl mx-auto py-6 px-4">
+        <div className={`prose ${proseSize} ${proseWidth} mx-auto py-6 px-4`}>
+          {documentContext && (
+            <p className="not-prose flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 border border-border rounded-md px-3 py-2 mb-6">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              {documentContext}
+            </p>
+          )}
+
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw]}
@@ -44,9 +74,14 @@ export default function DocumentViewer({ markdown, claims }) {
               mark: ({ node, ...props }) => {
                 const claimId = Number(props["data-claim-id"]);
                 const verdict = props["data-verdict"] || "pending";
+                const crossChecked = props["data-cross-checked"] === "true";
                 return (
                   <mark
-                    className={`cursor-pointer rounded px-0.5 not-italic transition-colors ${HIGHLIGHT_CLASSES[verdict] || HIGHLIGHT_CLASSES.pending}`}
+                    className={
+                      `cursor-pointer rounded px-0.5 not-italic transition-colors ${HIGHLIGHT_CLASSES[verdict] || HIGHLIGHT_CLASSES.pending}` +
+                      (crossChecked ? " ring-1 ring-offset-1 ring-violet-400" : "")
+                    }
+                    title={crossChecked ? "Cross-checked by a second model" : undefined}
                     onClick={() => setSelectedClaimId(claimId)}
                   >
                     {props.children}
@@ -81,7 +116,13 @@ export default function DocumentViewer({ markdown, claims }) {
         </div>
       </div>
 
-      {selectedClaim && <ClaimPanel claim={selectedClaim} onClose={() => setSelectedClaimId(null)} />}
+      {selectedClaim && (
+        <ClaimPanel
+          claim={selectedClaim}
+          onClose={() => setSelectedClaimId(null)}
+          overlay={isPresentationMode}
+        />
+      )}
     </div>
   );
 }
