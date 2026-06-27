@@ -41,7 +41,7 @@ from app.models.paper import Paper
 from app.models.verification import ExtractedClaim, ClaimVerification, ClaimEvidence
 from app.retrieval.query_engine import embed_query, search_chunks
 from app.retrieval.citations import build_locator
-from app.ingestion.lookup_bibliography import search_brave, search_serpapi
+from app.ingestion.lookup_bibliography import search_brave
 from app.ingestion.lookup_paper_doi import format_authors, extract_year
 from app.logging_config import get_logger
 
@@ -202,47 +202,31 @@ def search_web_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
     indices, handling a failed or empty search -- is directly testable
     without needing to drive it through the agent's tool-calling
     machinery at all."""
-    
-    results = None
-    
-    # Primary attempt: Brave Search
     try:
         results = search_brave(query, count=5)
     except Exception as e:
-        logger.warning("search_brave failed for query %r: %s. Falling back to SerpApi.", query, e)
-        
-        # Fallback attempt: SerpApi
-        try:
-            results = search_serpapi(query, count=5) 
-        except Exception as serp_e:
-            logger.warning("search_serpapi fallback failed for query %r: %s", query, serp_e)
-            return "Web search failed -- reach a verdict using only the corpus evidence already provided."
+        logger.warning("search_web tool call failed for query %r: %s", query, e)
+        return "Web search failed -- reach a verdict using only the corpus evidence already provided."
 
     if not results:
         return "No web results found for that query."
 
     start_index = len(ctx.deps.all_evidence) + 1
     lines = []
-    
     for i, r in enumerate(results):
-        # Handle key discrepancies between Brave (description, url) and SerpApi (snippet, link)
-        title = r.get("title", "")
-        excerpt = r.get("description") or r.get("snippet", "")
-        url = r.get("url") or r.get("link", "")
-        
         ctx.deps.all_evidence.append({
             "source": "web",
             "book_id": None,
             "paper_id": None,
-            "title": title,
-            "excerpt": excerpt,
+            "title": r.get("title", ""),
+            "excerpt": r.get("description", ""),
             "locator": None,
-            "web_url": url,
-            "web_title": title,
+            "web_url": r.get("url"),
+            "web_title": r.get("title"),
         })
-        lines.append(f"[{start_index + i}] {title}\n{excerpt}\n{url}")
-        
+        lines.append(f"[{start_index + i}] {r.get('title', '')}\n{r.get('description', '')}\n{r.get('url', '')}")
     return "\n\n".join(lines)
+
 
 def search_academic_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
     """Searches Crossref's academic works database for papers relevant
@@ -310,24 +294,87 @@ def format_evidence_list(evidence: list[dict]) -> str:
     return "\n\n".join(lines)
 
 
-def verify_claim_text(claim_text: str, agent: Agent | None = None, top_k: int = DEFAULT_TOP_K, document_context: str | None = None) -> tuple[VerificationVerdict, list[dict]]:
+def find_containing_paragraph(markdown: str, claim_text: str, max_chars: int = 3000) -> str | None:
+    """Finds the claim's exact position in the document and returns
+    the full paragraph it's embedded in -- the sentences around it
+    that give it actual meaning, not just the bare extracted sentence
+    in isolation. This is the direct fix for a real failure mode:
+    verifying a claim with zero surrounding context means a qualifier,
+    a contrast ("however, this was later disputed..."), or a scope-
+    narrowing detail one sentence over is invisible to the agent,
+    which can produce a misjudged verdict on a claim that, read in
+    context, clearly meant something narrower or different than the
+    bare sentence suggests on its own.
+
+    Paragraphs are blank-line separated, the same convention
+    split_into_sections() already uses for the document's own
+    structure. Capped at max_chars and centered on the claim's own
+    position if the containing paragraph is unusually long -- real
+    paragraph lengths in actual documents are typically well under a
+    thousand characters, but a pathological one (a wall of text with
+    no real paragraph breaks) shouldn't be allowed to bloat the
+    verification prompt unboundedly. The claim itself is never the
+    part that gets trimmed, only the context surrounding it.
+
+    Returns None if the claim can't be found verbatim in the markdown
+    at all -- the same graceful-degradation case the frontend's
+    annotateMarkdown.js already handles for inline highlighting.
+    Verification simply proceeds without paragraph context in that
+    case, exactly as it always did before this existed."""
+    start = markdown.find(claim_text)
+    if start == -1:
+        return None
+    end = start + len(claim_text)
+
+    para_start = markdown.rfind("\n\n", 0, start)
+    para_start = 0 if para_start == -1 else para_start + 2
+    para_end = markdown.find("\n\n", end)
+    para_end = len(markdown) if para_end == -1 else para_end
+
+    paragraph = markdown[para_start:para_end].strip()
+    if len(paragraph) <= max_chars:
+        return paragraph
+
+    claim_offset = start - para_start
+    half = max_chars // 2
+    window_start = max(0, claim_offset - half)
+    window_end = min(len(paragraph), claim_offset + (end - start) + half)
+    return paragraph[window_start:window_end].strip()
+
+
+def verify_claim_text(
+    claim_text: str,
+    agent: Agent | None = None,
+    top_k: int = DEFAULT_TOP_K,
+    document_context: str | None = None,
+    paragraph_context: str | None = None,
+) -> tuple[VerificationVerdict, list[dict]]:
     """Gathers corpus evidence, runs the verification agent (which may
     call search_web or search_academic_papers itself), and returns the
     verdict alongside the final, complete evidence list (corpus + any
     web/academic results the agent actually triggered) -- ready for the
     caller to persist.
 
-    document_context, when available (see app/agents/document_context.py),
-    is prepended ahead of the claim and evidence, clearly delineated --
-    most useful for the same case it helps extraction with: recognizing
-    that a claim is the document's own self-referential statement about
-    its own aims/methodology, which no evidence could ever appropriately
-    settle, rather than treating it as a normal external claim that
-    happens to have thin evidence."""
+    document_context (see app/agents/document_context.py) and
+    paragraph_context (find_containing_paragraph, just above) nest in
+    that order, broadest first: document-level orientation, then the
+    claim's own immediate surrounding passage, then the claim and
+    evidence themselves. document_context is most useful for
+    recognizing a claim is the document's own self-referential
+    statement; paragraph_context is most useful for catching a
+    qualifier or scope-narrowing detail the bare claim sentence loses
+    on its own -- two different, complementary kinds of context, not
+    redundant with each other."""
     agent = agent or build_verification_agent()
     deps = VerificationDeps(all_evidence=gather_corpus_evidence(claim_text, top_k=top_k))
 
     prompt = f"Claim to verify:\n{claim_text}\n\nEvidence:\n{format_evidence_list(deps.all_evidence)}"
+    if paragraph_context:
+        prompt = (
+            f"The claim below appeared within this surrounding passage from the document "
+            f"(for understanding its full context and scope -- verify the claim itself, not "
+            f"unrelated parts of the passage):\n{paragraph_context}\n\n---\n\n{prompt}"
+        )
     if document_context:
         prompt = f"Document context (for your understanding only):\n{document_context}\n\n---\n\n{prompt}"
     result = agent.run_sync(prompt, deps=deps)
@@ -363,9 +410,15 @@ def run_verification(claim_id: int) -> bool:
             return False
         claim_text = claim.text
         document_context = claim.document.document_context
+        paragraph_context = (
+            find_containing_paragraph(claim.document.markdown, claim_text)
+            if claim.document.markdown else None
+        )
 
     try:
-        verdict, all_evidence = verify_claim_text(claim_text, document_context=document_context)
+        verdict, all_evidence = verify_claim_text(
+            claim_text, document_context=document_context, paragraph_context=paragraph_context
+        )
     except Exception as e:
         logger.error("Verification failed for claim %s: %s", claim_id, e)
         with get_session() as session:

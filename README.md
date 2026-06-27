@@ -719,3 +719,12 @@ Run celery tasks: `uv run celery -A app.worker.celery_app worker --loglevel=info
 
 uv run python scripts/cross_check_verification.py --document-id 1
 uv run python scripts/cross_check_verification.py --document-id 1 --verdicts contradicted supported
+
+uv run alembic upgrade head
+uv run python scripts/check_corpus_context.py
+uv run python scripts/check_corpus_context.py --books-only
+uv run python scripts/check_corpus_context.py --papers-only
+
+uv run python scripts/migrate_qdrant.py --dest-url https://xxxxx.cloud.qdrant.io:6333 --dest-api-key YOUR_KEY
+uv run python scripts/dump_sqlite.py
+uv run python scripts/dump_sqlite.py --output backups/snapshot.sql

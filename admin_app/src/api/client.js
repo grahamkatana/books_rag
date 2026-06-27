@@ -168,3 +168,14 @@ export function fetchChat(id) {
 export function deleteChat(id) {
   return request(`/admin/chats/${id}`, { method: "DELETE" });
 }
+
+export function fetchCorpusContextChecks() {
+  return request("/admin/corpus-context-checks/");
+}
+
+export function setMarkedForDelete(checkId, markedForDelete) {
+  return request(`/admin/corpus-context-checks/${checkId}`, {
+    method: "PUT",
+    body: JSON.stringify({ marked_for_delete: markedForDelete }),
+  });
+}

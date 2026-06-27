@@ -94,6 +94,38 @@ assert deps_acad_empty.all_evidence == []
 assert "no matching papers" in output_acad_empty.lower()
 print("OK")
 
+# --- find_containing_paragraph: pure logic ---
+print("\n--- find_containing_paragraph ---")
+md_normal = (
+    "Intro paragraph here.\n\n"
+    "This is the first sentence of the real paragraph. AI adoption doubled since 2023, according to a survey. "
+    "However, this trend was concentrated almost entirely in large enterprises, not smaller teams.\n\n"
+    "A later, unrelated paragraph."
+)
+claim_normal = "AI adoption doubled since 2023, according to a survey."
+result = vc.find_containing_paragraph(md_normal, claim_normal)
+assert "However, this trend was concentrated" in result, "the qualifying sentence after the claim must be included"
+assert "first sentence of the real paragraph" in result, "the sentence before the claim must be included too"
+assert "Intro paragraph here" not in result, "must not bleed into the previous paragraph"
+assert "later, unrelated paragraph" not in result, "must not bleed into the next paragraph"
+
+assert vc.find_containing_paragraph("A claim at the very start.\n\nSecond.", "A claim at the very start.") \
+    == "A claim at the very start."
+assert vc.find_containing_paragraph("First.\n\nThe very last claim.", "The very last claim.") \
+    == "The very last claim."
+assert vc.find_containing_paragraph("Some text.", "Not present anywhere.") is None
+
+filler_before = "Filler sentence repeated many times. " * 200
+filler_after = "More filler after the claim, repeated. " * 200
+unique_claim = "A SPECIFIC AND UNIQUE CLAIM TEXT HERE."
+huge_para = filler_before + unique_claim + " " + filler_after
+md_huge = "First.\n\n" + huge_para + "\n\nLast."
+truncated = vc.find_containing_paragraph(md_huge, unique_claim, max_chars=500)
+assert unique_claim in truncated, "the claim itself must never be cut off by truncation"
+assert len(truncated) <= 600
+assert "First." not in truncated and "Last." not in truncated
+print("OK")
+
 # --- gather_corpus_evidence, real in-memory Qdrant + fake embeddings ---
 print("\n--- gather_corpus_evidence ---")
 with get_session() as session:
@@ -203,7 +235,7 @@ try:
 
     original_verify = vc.verify_claim_text
     try:
-        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None: (good_verdict, good_evidence)
+        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None, paragraph_context=None: (good_verdict, good_evidence)
         assert vc.run_verification(claim_id) is True
         with get_session() as session:
             v = session.get(ExtractedClaim, claim_id).verification
@@ -221,13 +253,13 @@ try:
             session.add(claim2)
             session.flush()
             claim2_id = claim2.id
-        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None: (bad_verdict, good_evidence)
+        vc.verify_claim_text = lambda claim_text, agent=None, top_k=6, document_context=None, paragraph_context=None: (bad_verdict, good_evidence)
         assert vc.run_verification(claim2_id) is True, "an out-of-range citation must not fail verification itself"
         with get_session() as session:
             assert len(session.get(ExtractedClaim, claim2_id).verification.evidence) == 0
         print("Out-of-range citation handled OK")
 
-        def raise_error(claim_text, agent=None, top_k=6, document_context=None):
+        def raise_error(claim_text, agent=None, top_k=6, document_context=None, paragraph_context=None):
             raise RuntimeError("simulated failure")
         vc.verify_claim_text = raise_error
         with get_session() as session:
