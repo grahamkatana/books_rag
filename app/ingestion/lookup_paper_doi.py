@@ -20,26 +20,43 @@ Two-step resolution per paper:
      what was searched for, since a free-text search is far less
      precise than a direct DOI lookup.
 
-Either way, a DOI is only trusted once Crossref actually resolves it --
-unlike ISBN, a DOI has no checksum to validate offline; resolving it
-against the real registry IS the validation step.
+If BOTH of those fail, a third fallback kicks in: a general web search
+(Brave, then SerpApi) plus LLM extraction, the same approach
+lookup_bibliography.py already uses for books. This matters for a real,
+common case Crossref structurally can't help with: Crossref is a
+journal-article/conference-paper registry, and this corpus' "papers"
+genuinely include things that were never going to be in it regardless
+of how the title search is worded -- industry reports, white papers,
+AI incident database entries, any professionally published but
+non-DOI'd technical document. Results from this path are recorded with
+bibliography_source="web_search" (not "doi_lookup") and a
+lookup_confidence, the same honest provenance distinction
+lookup_bibliography.py already makes for books -- a much better
+starting point than a filename guess, but explicitly less rigorous
+than an actual resolved DOI, and worth a glance before fully trusting.
+
+Either way a DOI IS found, it's only trusted once Crossref actually
+resolves it -- unlike ISBN, a DOI has no checksum to validate offline;
+resolving it against the real registry IS the validation step.
 
 Never touches a paper already marked bibliography_verified=True, and
-(by default) skips one already bibliography_source="doi_lookup" too,
-unless --force is passed.
+(by default) skips one already bibliography_source in ("doi_lookup",
+"web_search") too, unless --force is passed.
 
 Usage:
     python -m app.cli lookup-paper-doi
     python -m app.cli lookup-paper-doi --force
 """
 
+import json
 import re
 import time
 
 import requests
+from openai import OpenAI
 from pypdf import PdfReader
 
-from app.config import PAPER_PDF_DIR, CROSSREF_MAILTO
+from app.config import PAPER_PDF_DIR, CROSSREF_MAILTO, BRAVE_API_KEY, SERPAPI_API_KEY, DEFAULT_CHAT_MODEL
 from app.db.session import get_session
 from app.models.paper import Paper
 from app.logging_config import get_logger
@@ -47,6 +64,8 @@ from app.logging_config import get_logger
 logger = get_logger(__name__)
 
 CROSSREF_WORKS_URL = "https://api.crossref.org/works"
+BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+SERPAPI_SEARCH_URL = "https://serpapi.com/search"
 
 # Tried first: a DOI immediately preceded by a "doi:" or "doi.org/"
 # label, much more likely to be the paper's own DOI than a bare match.
@@ -158,6 +177,119 @@ def crossref_search_by_title(title: str) -> dict | None:
         return None
 
 
+def search_brave(query: str, count: int = 5) -> list:
+    """Mirrors lookup_bibliography.py's own search_brave exactly in
+    shape and behavior -- not imported from there, to keep these two
+    independent CLI commands from depending on each other for
+    something this small, but identical in what it returns."""
+    if not BRAVE_API_KEY:
+        return []
+    try:
+        response = requests.get(
+            BRAVE_SEARCH_URL,
+            headers={"Accept": "application/json", "X-Subscription-Token": BRAVE_API_KEY},
+            params={"q": query, "count": count},
+            timeout=15,
+        )
+        response.raise_for_status()
+        return response.json().get("web", {}).get("results", [])
+    except requests.RequestException as e:
+        logger.warning("Brave search failed for %r: %s", query, e)
+        return []
+
+
+def search_serpapi(query: str, count: int = 5) -> list:
+    """Fallback for when Brave fails or comes back empty. Normalized
+    to the same title/url/description shape search_brave() produces --
+    SerpApi's own field names are link/snippet, not url/description."""
+    if not SERPAPI_API_KEY:
+        return []
+    try:
+        response = requests.get(
+            SERPAPI_SEARCH_URL,
+            params={"engine": "google", "q": query, "num": count, "api_key": SERPAPI_API_KEY},
+            timeout=15,
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning("SerpApi search failed for %r: %s", query, e)
+        return []
+    organic_results = response.json().get("organic_results", [])
+    return [
+        {"title": r.get("title", ""), "url": r.get("link", ""), "description": r.get("snippet", "")}
+        for r in organic_results
+    ]
+
+
+def search_with_fallback(query: str, count: int = 5) -> list:
+    """Brave first, SerpApi only if Brave raised or came back with
+    nothing -- keeps this at one paid search call in the normal case,
+    the fallback only spending a second one when the first genuinely
+    didn't help."""
+    results = search_brave(query, count=count)
+    if results:
+        return results
+    return search_serpapi(query, count=count)
+
+
+def extract_paper_bibliography_from_web(openai_client, title_hint: str, search_results: list,
+                                         model: str = DEFAULT_CHAT_MODEL) -> dict:
+    """The actual fallback for papers Crossref was never going to have
+    -- industry reports, white papers, AI incident database entries,
+    any professionally published technical document without a DOI.
+    Same web-search-and-LLM-extract approach lookup_bibliography.py
+    already uses for books, adapted to a paper's own fields (venue and
+    abstract instead of publisher and edition)."""
+    if not search_results:
+        return {}
+
+    context = "\n\n".join(
+        f"Title: {r.get('title', '')}\nURL: {r.get('url', '')}\nSnippet: {r.get('description', '')}"
+        for r in search_results
+    )
+    system_prompt = (
+        "You extract bibliographic data about a specific paper, report, or technical "
+        "document from web search results. The source might be a journal article, "
+        "conference paper, industry report, white paper, or any other professionally "
+        "published technical document -- not every real source has a DOI. Respond with "
+        "ONLY a JSON object with these exact keys: title, authors, year, venue, abstract, "
+        "confidence. authors should be semicolon-separated 'Surname, F.' entries, or the "
+        "publishing organization's name if there's no individual author (e.g. an "
+        "institutional report). venue is the publishing venue, journal, conference, or "
+        "organization -- whatever's most accurate for this kind of source. year is an "
+        "integer or null. abstract is a short summary if one is available in the search "
+        "results, else null. confidence is \"high\", \"medium\", or \"low\" based on how "
+        "consistent the search results are with each other -- if results disagree, seem "
+        "thin, or seem to be about a different document, say low rather than guessing. "
+        "Use null for any field you can't determine confidently."
+    )
+    user_prompt = f"Document (from filename, may be imprecise): {title_hint}\n\nSearch results:\n\n{context}"
+
+    response = openai_client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        response_format={"type": "json_object"},
+    )
+    try:
+        return json.loads(response.choices[0].message.content)
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return {}
+
+
+def apply_web_result_to_paper(paper: Paper, found: dict) -> None:
+    paper.title = found.get("title") or paper.title
+    paper.authors = found.get("authors")
+    paper.year = found.get("year")
+    paper.venue = found.get("venue")
+    paper.abstract = found.get("abstract") or paper.abstract
+    paper.doi = None  # this path never produces one -- clear any stale value from a previous attempt rather than leave it
+    paper.bibliography_source = "web_search"
+    paper.lookup_confidence = found.get("confidence", "low")
+
+
 def apply_record_to_paper(paper: Paper, record: dict, doi: str) -> None:
     title_list = record.get("title") or []
     paper.title = title_list[0] if title_list else paper.title
@@ -174,15 +306,17 @@ def apply_record_to_paper(paper: Paper, record: dict, doi: str) -> None:
 
 
 def main(force: bool = False):
+    openai_client = OpenAI() if (BRAVE_API_KEY or SERPAPI_API_KEY) else None
+
     with get_session() as session:
         query_filter = Paper.bibliography_verified.is_(False)
         if not force:
-            query_filter = query_filter & (Paper.bibliography_source != "doi_lookup")
+            query_filter = query_filter & ~Paper.bibliography_source.in_(["doi_lookup", "web_search"])
         paper_ids = [p.id for p in session.query(Paper.id).filter(query_filter).all()]
 
     if not paper_ids:
-        logger.info("Nothing to look up -- every paper is either verified or "
-                    "already doi_lookup'd (pass --force to redo those too).")
+        logger.info("Nothing to look up -- every paper is either verified or already "
+                    "doi_lookup'd/web_search'd (pass --force to redo those too).")
         return
 
     for paper_id in paper_ids:
@@ -219,14 +353,37 @@ def main(force: bool = False):
                     if record:
                         doi = record.get("DOI")
 
-                if record is None:
-                    logger.warning("Could not resolve a DOI for %s", paper.source_key)
+                if record is not None:
+                    apply_record_to_paper(paper, record, doi)
+                    session.add(paper)
+                    logger.info("Resolved %s -> doi=%s title=%r year=%s",
+                                paper.source_key, paper.doi, paper.title, paper.year)
                     continue
 
-                apply_record_to_paper(paper, record, doi)
+                # Crossref structurally can't help here -- it's a DOI
+                # registry, and this paper has neither a discoverable
+                # DOI nor a title match in it. That's the expected,
+                # normal outcome for a real industry report or white
+                # paper, not a failure of the search itself, so this
+                # falls back to a general web search rather than giving
+                # up on the paper entirely.
+                if openai_client is None:
+                    logger.warning("Could not resolve a DOI for %s, and no BRAVE_API_KEY/"
+                                    "SERPAPI_API_KEY is set to try a web-search fallback", paper.source_key)
+                    continue
+
+                logger.info("No DOI resolution for %s -- trying a general web search "
+                            "(it may genuinely not have a DOI, e.g. an industry report)", paper.source_key)
+                results = search_with_fallback(f"{paper.title} paper OR report")
+                found = extract_paper_bibliography_from_web(openai_client, paper.source_key, results)
+                if not found or not found.get("title"):
+                    logger.warning("Could not resolve a bibliography for %s by any method", paper.source_key)
+                    continue
+
+                apply_web_result_to_paper(paper, found)
                 session.add(paper)
-                logger.info("Resolved %s -> doi=%s title=%r year=%s",
-                            paper.source_key, paper.doi, paper.title, paper.year)
+                logger.info("Resolved %s via web search (%s confidence) -> title=%r year=%s",
+                            paper.source_key, paper.lookup_confidence, paper.title, paper.year)
         except Exception as e:
             # Whatever the reason (a duplicate DOI being the realistic
             # one), this paper's update is abandoned and every other

@@ -47,6 +47,10 @@ class AdminPaperSchema(Schema):
     abstract = fields.Str(allow_none=True)
     bibliography_verified = fields.Bool()
     bibliography_source = fields.Str(allow_none=True)
+    # Only meaningful for bibliography_source="web_search" -- see
+    # Paper.lookup_confidence's own docstring. DOI-resolved rows have
+    # no judgment call involved, so this stays null for those.
+    lookup_confidence = fields.Str(allow_none=True)
 
 
 class AdminPaperUpdateSchema(Schema):
@@ -75,6 +79,7 @@ def paper_to_dict(paper: Paper) -> dict:
         "abstract": paper.abstract,
         "bibliography_verified": paper.bibliography_verified,
         "bibliography_source": paper.bibliography_source,
+        "lookup_confidence": paper.lookup_confidence,
     }
 
 

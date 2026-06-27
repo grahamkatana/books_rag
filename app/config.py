@@ -55,7 +55,14 @@ MAX_CONTEXT_INPUT_CHARS = int(os.environ.get("MAX_CONTEXT_INPUT_CHARS", "100000"
 # app/ingestion/lookup_bibliography.py. Without this set, that step is
 # skipped and seed_books.py falls back to its filename heuristic.)
 BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY")
-SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY", "your_serpapi_key_here")
+# Optional fallback search provider for lookup_bibliography.py and
+# lookup_paper_doi.py -- used when Brave/Crossref come back empty
+# (Crossref especially: it's a DOI registry, so it has nothing at all
+# for non-DOI sources like industry reports or white papers, which
+# papers in this corpus genuinely include, not just journal articles).
+# Optional, not required: both callers already degrade gracefully (skip
+# the fallback, keep the primary result) when this isn't set.
+SERPAPI_API_KEY = os.environ.get("SERPAPI_API_KEY")
 
 # Qdrant
 QDRANT_URL = os.environ.get("QDRANT_URL")

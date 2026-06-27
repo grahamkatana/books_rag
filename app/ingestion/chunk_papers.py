@@ -99,16 +99,57 @@ def chunk_to_dict(raw_chunk, chunker, source_key: str) -> dict:
     }
 
 
+_converter = None
+
+
+def get_converter():
+    """Builds the Docling converter once and reuses it across every
+    paper in a batch run -- DocumentConverter() loads model weights on
+    construction, so rebuilding it per-paper would reload them
+    needlessly for every single file.
+
+    OCR is explicitly disabled, not left at Docling's default (on).
+    This is a real, found fix, not a guess: running OCR unconditionally
+    on every page was the direct cause of std::bad_alloc crashes partway
+    through longer papers in production. OCR requires rasterizing each
+    page into a full bitmap for the OCR engine to read, which is far
+    more memory-intensive than reading the text Adobe/LaTeX/Word
+    already embedded in the PDF -- and academic papers (the only thing
+    this pipeline ever processes) are virtually always digital-native
+    with a real, extractable text layer already. There's no scanned-
+    document case to support here. Table structure detection stays on,
+    since extracting tables doesn't require rasterizing whole pages the
+    way OCR does, and tables are common and worth keeping in papers."""
+    global _converter
+    if _converter is None:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+
+        pipeline_options = PdfPipelineOptions()
+        pipeline_options.do_ocr = False
+        pipeline_options.do_table_structure = True
+
+        _converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                    backend=PyPdfiumDocumentBackend,
+                )
+            }
+        )
+    return _converter
+
+
 def chunk_paper_pdf(pdf_path: Path, source_key: str, chunker=None) -> list[dict]:
     """The one function in this file that actually calls Docling.
     Deliberately thin -- conversion + chunking, then chunk_to_dict() for
     every chunk -- so the parts worth testing (page/section extraction,
     output shape) live in plain functions that don't need Docling
     installed or its layout models downloaded to verify."""
-    from docling.document_converter import DocumentConverter
-
     chunker = chunker or build_chunker()
-    result = DocumentConverter().convert(str(pdf_path))
+    result = get_converter().convert(str(pdf_path))
     chunks = [chunk_to_dict(raw_chunk, chunker, source_key) for raw_chunk in chunker.chunk(dl_doc=result.document)]
     # chunk_id matches the books pipeline's exact f"{source_key}::{idx}"
     # convention -- embed_upload_papers.py derives a stable Qdrant point

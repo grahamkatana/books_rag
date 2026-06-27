@@ -50,9 +50,19 @@ class Paper(Base):
     # Same verification semantics as Book: False until a human (or a
     # successful DOI resolution against a real bibliographic record) has
     # confirmed this data, with bibliography_source recording where the
-    # current values came from ("filename_guess" / "doi_lookup" / "manual").
+    # current values came from ("filename_guess" / "doi_lookup" /
+    # "web_search" / "manual").
     bibliography_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     bibliography_source: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Only meaningful for bibliography_source="web_search" -- DOI
+    # resolution is deterministic (Crossref either has the exact record
+    # or it doesn't, no judgment call involved), but the web-search
+    # fallback for non-DOI sources (industry reports, white papers --
+    # anything Crossref's registry was never going to have regardless
+    # of how the title search is worded) is LLM-extracted from search
+    # snippets, the same kind of judgment call Book.lookup_confidence
+    # already exists to record.
+    lookup_confidence: Mapped[str | None] = mapped_column(String, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
