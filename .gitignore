@@ -39,3 +39,5 @@ data/chunks/.manifest.json
 
 # logs (rotating files, generated at runtime)
 logs/
+*.docx
+backups/

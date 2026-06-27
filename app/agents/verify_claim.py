@@ -41,7 +41,7 @@ from app.models.paper import Paper
 from app.models.verification import ExtractedClaim, ClaimVerification, ClaimEvidence
 from app.retrieval.query_engine import embed_query, search_chunks
 from app.retrieval.citations import build_locator
-from app.ingestion.lookup_bibliography import search_brave
+from app.ingestion.lookup_bibliography import search_with_fallback
 from app.ingestion.lookup_paper_doi import format_authors, extract_year
 from app.logging_config import get_logger
 
@@ -192,18 +192,21 @@ def search_crossref(query: str, count: int = 5) -> list[dict]:
 
 
 def search_web_impl(ctx: RunContext[VerificationDeps], query: str) -> str:
-    """Searches the general web for evidence about the claim. Best for
-    factual, statistical, or general claims -- NOT for claims that cite
-    a specific academic study or author, where search_academic_papers
-    is the better-suited tool. A standalone function (registered onto
-    the agent in build_verification_agent() below) rather than an
-    inline @agent.tool closure, specifically so its actual behavior --
-    appending to ctx.deps.all_evidence with correctly-continued
-    indices, handling a failed or empty search -- is directly testable
-    without needing to drive it through the agent's tool-calling
-    machinery at all."""
+    """Searches the general web for evidence about the claim -- Brave
+    first, falling back to SerpApi if Brave fails outright (a 402, a
+    rate limit, anything) or simply returns nothing, the same
+    search_with_fallback() lookup_bibliography.py already uses. Best
+    for factual, statistical, or general claims -- NOT for claims that
+    cite a specific academic study or author, where
+    search_academic_papers is the better-suited tool. A standalone
+    function (registered onto the agent in build_verification_agent()
+    below) rather than an inline @agent.tool closure, specifically so
+    its actual behavior -- appending to ctx.deps.all_evidence with
+    correctly-continued indices, handling a failed or empty search --
+    is directly testable without needing to drive it through the
+    agent's tool-calling machinery at all."""
     try:
-        results = search_brave(query, count=5)
+        results = search_with_fallback(query, count=5)
     except Exception as e:
         logger.warning("search_web tool call failed for query %r: %s", query, e)
         return "Web search failed -- reach a verdict using only the corpus evidence already provided."

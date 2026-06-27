@@ -42,6 +42,9 @@ from app.config import BRAVE_API_KEY, SERPAPI_API_KEY, DEFAULT_CHAT_MODEL
 from app.db.session import get_session
 from app.models.book import Book
 from app.ingestion.bibliography_utils import coerce_bibliography_fields
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 SERPI_API_SEARCH_URL = "https://serpapi.com/search"
@@ -70,8 +73,12 @@ def search_serpapi(query: str, count: int = 5) -> list:
     Returns an empty list (never raises) if SERPAPI_API_KEY isn't set
     or the request itself fails -- this is always a fallback, never a
     hard dependency, so its own failure should never crash a lookup
-    that Brave might still be able to handle."""
+    that Brave might still be able to handle. Every outcome here is
+    logged explicitly (skipped / failed / empty / how many results) --
+    whether the fallback even ran at all should never be a mystery
+    from the logs alone."""
     if not SERPAPI_API_KEY:
+        logger.info("SerpApi fallback skipped for %r -- SERPAPI_API_KEY is not set", query)
         return []
     try:
         response = requests.get(
@@ -81,10 +88,15 @@ def search_serpapi(query: str, count: int = 5) -> list:
         )
         response.raise_for_status()
     except requests.RequestException as e:
-        print(f"  [warning] SerpApi search failed: {e}")
+        logger.warning("SerpApi search failed for %r: %s", query, e)
         return []
 
     organic_results = response.json().get("organic_results", [])
+    if not organic_results:
+        logger.info("SerpApi returned zero results for %r", query)
+        return []
+
+    logger.info("SerpApi returned %d result(s) for %r", len(organic_results), query)
     return [
         {"title": r.get("title", ""), "url": r.get("link", ""), "description": r.get("snippet", "")}
         for r in organic_results
@@ -94,17 +106,20 @@ def search_serpapi(query: str, count: int = 5) -> list:
 def search_with_fallback(query: str, count: int = 5) -> list:
     """Tries Brave first, falls back to SerpApi only if Brave raised or
     came back with nothing -- Brave staying primary (not run in
-    parallel with SerpApi) keeps this at one paid search call per book
-    in the normal case, with the fallback only spending a second one
-    when the first genuinely didn't help."""
+    parallel with SerpApi) keeps this at one paid search call per
+    lookup in the normal case, with the fallback only spending a
+    second one when the first genuinely didn't help."""
     try:
         results = search_brave(query, count=count)
     except requests.RequestException as e:
-        print(f"  [warning] Brave search failed: {e} -- trying SerpApi instead")
+        logger.warning("Brave search failed for %r: %s -- trying SerpApi instead", query, e)
         results = []
 
     if results:
         return results
+
+    if not results:
+        logger.info("Brave returned nothing usable for %r -- trying SerpApi", query)
     return search_serpapi(query, count=count)
 
 

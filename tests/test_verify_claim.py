@@ -27,7 +27,7 @@ deps = vc.VerificationDeps(all_evidence=[{"source": "corpus", "title": "Existing
                                           "locator": None, "book_id": 1, "paper_id": None,
                                           "web_url": None, "web_title": None}])
 ctx = SimpleNamespace(deps=deps)
-with patch.object(vc, "search_brave", return_value=[
+with patch.object(vc, "search_with_fallback", return_value=[
     {"title": "Web Result 1", "url": "https://example.com/1", "description": "snippet one"},
 ]):
     output = vc.search_web_impl(ctx, "test query")
@@ -36,13 +36,13 @@ assert deps.all_evidence[1]["web_url"] == "https://example.com/1"
 assert "[2]" in output, "index must continue from existing evidence count, not restart at 1"
 
 deps_empty = vc.VerificationDeps(all_evidence=[])
-with patch.object(vc, "search_brave", return_value=[]):
+with patch.object(vc, "search_with_fallback", return_value=[]):
     output_empty = vc.search_web_impl(SimpleNamespace(deps=deps_empty), "nothing")
 assert deps_empty.all_evidence == []
 assert "no web results" in output_empty.lower()
 
 deps_fail = vc.VerificationDeps(all_evidence=[])
-with patch.object(vc, "search_brave", side_effect=RuntimeError("Brave API down")):
+with patch.object(vc, "search_with_fallback", side_effect=RuntimeError("Brave API down")):
     output_fail = vc.search_web_impl(SimpleNamespace(deps=deps_fail), "fails")
 assert deps_fail.all_evidence == []
 assert "failed" in output_fail.lower()
