@@ -1,11 +1,13 @@
 import sys
-sys.path.insert(0, ".")
-sys.path.insert(0, "scripts")
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import sqlite3
 import shutil
 import tempfile
-from pathlib import Path
 
 import dump_sqlite as ds
 

@@ -1,7 +1,9 @@
 import sys, tempfile
 from pathlib import Path
-sys.path.insert(0, ".")
-sys.path.insert(0, "scripts")
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 from app.db.session import get_session
 from app.models.book import Book
