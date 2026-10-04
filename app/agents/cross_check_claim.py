@@ -20,6 +20,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import CROSS_CHECK_MODEL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
@@ -83,9 +84,10 @@ def build_cross_check_agent(model: str = CROSS_CHECK_MODEL) -> Agent:
     # OpenAI provider with the base_url repointed -- no dedicated
     # provider or new dependency needed.
     provider = OpenAIProvider(base_url=DEEPSEEK_BASE_URL, api_key=DEEPSEEK_API_KEY)
+    # pydantic-ai v2: the provider goes on the model, not the Agent.
+    model_obj = OpenAIChatModel(model, provider=provider)
     return Agent(
-        f"openai-chat:{model}",
-        provider=provider,
+        model_obj,
         output_type=CrossCheckResult,
         system_prompt=CROSS_CHECK_SYSTEM_PROMPT,
     )
