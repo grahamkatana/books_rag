@@ -280,6 +280,13 @@ def save_turn(session: Session, chat: Chat, question: str, answer: str, citation
     """Persists the user question and assistant answer as Messages, and
     every <CITATION> tag actually present in the answer as a Citation row
     linked to the assistant Message."""
+    # Postgres text columns reject NUL (0x00) bytes outright, and ~6% of the
+    # ingested chunks carry them from PDF extraction. The LLM echoes those
+    # bytes into its answer, which then fails to persist (psycopg.DataError)
+    # after the answer has already streamed to the client. A NUL byte is never
+    # meaningful in chat text, so drop them at the persistence boundary.
+    question = question.replace("\x00", "")
+    answer = answer.replace("\x00", "")
     session.add(Message(chat_id=chat.id, role="user", content=question))
 
     assistant_message = Message(chat_id=chat.id, role="assistant", content=answer)
