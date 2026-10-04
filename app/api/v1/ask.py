@@ -9,6 +9,9 @@ from app.api.clients import get_openai_client, get_qdrant_client
 from app.db.session import get_session
 from app.retrieval.query_engine import answer_question, answer_question_stream
 from app.api.v1.schemas import AskRequestSchema, AskResponseSchema
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 blp = Blueprint(
     "ask", __name__,
@@ -90,6 +93,17 @@ def ask_stream(args):
                 # (streaming has started) -- an "error" SSE event is the
                 # only way left to signal this to the client.
                 yield f"event: error\ndata: {json.dumps({'message': 'Chat not found'})}\n\n"
+            except Exception:
+                # Any other failure (OpenAI auth error, Qdrant down, ...)
+                # must not propagate out of the generator: that would kill
+                # the stream mid-flight, which a browser over HTTP/2 sees as
+                # a raw ERR_HTTP2_PROTOCOL_ERROR instead of an answer.
+                # Log the real cause server-side and close the stream with a
+                # clean error event. The chat (already created and its id
+                # already sent to the client) is left in place, so a retry
+                # lands in the same thread rather than a dead id.
+                logger.exception("ask/stream failed for user_id=%s", user_id)
+                yield f"event: error\ndata: {json.dumps({'message': 'Something went wrong while answering. Please try again.'})}\n\n"
 
     return Response(
         generate(),

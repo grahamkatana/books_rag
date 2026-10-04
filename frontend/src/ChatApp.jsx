@@ -130,7 +130,26 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
         },
         onError: (err) => {
           setIsStreaming(false);
-          handleError(err);
+          if (err instanceof UnauthorizedError) {
+            onSessionExpired();
+            return;
+          }
+          // Surface the failure in the empty assistant bubble instead of
+          // leaving it stuck on "Thinking…". Transport/HTTP errors carry
+          // useless strings ("Request failed: 500", "Failed to fetch",
+          // "network error") -- show a human line for those, but keep a
+          // genuine backend message ("Chat not found") as-is.
+          const TRANSPORT_ERROR = /Request failed|Failed to fetch|network error|Load failed|NetworkError|HTTP2/i;
+          const message =
+            err?.message && !TRANSPORT_ERROR.test(err.message)
+              ? err.message
+              : "Sorry, I couldn't get an answer. Please try again.";
+          setMessages((prev) => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            updated[updated.length - 1] = { ...last, content: message };
+            return updated;
+          });
         },
       }
     );
