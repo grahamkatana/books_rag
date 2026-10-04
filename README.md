@@ -335,6 +335,9 @@ concept -- skipped entirely, not just always empty, when
 `corpus="papers"`, so a papers-only question doesn't pay for a `Book`
 query that could never affect its results.
 
+Search latency tuning (int8 scalar quantization to keep the vectors
+RAM-resident) is documented in [QDRANT_QUANTIZATION.md](QDRANT_QUANTIZATION.md).
+
 ## HTTP API
 
 Two ways to run this, both valid depending on what you're doing:
