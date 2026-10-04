@@ -1,9 +1,9 @@
 """
 Cross-checks a document's claim verifications using a different model
-provider (Claude/Anthropic) than the primary verification agent
-(OpenAI) -- an independent second opinion on whether each verdict
-actually follows from the evidence it cited. See
-app/agents/cross_check_claim.py for the full reasoning.
+provider (DeepSeek) than the primary verification agent (OpenAI) -- an
+independent second opinion on whether each verdict actually follows
+from the evidence it cited. See app/agents/cross_check_claim.py for the
+full reasoning.
 
 Runs synchronously, in this process -- deliberately not enqueued via
 Celery, since this is a manual dev/grounding tool you're running and
@@ -11,7 +11,7 @@ watching directly. The same operation is also available as
 cross_check_document_task in app/worker/tasks.py for whenever this
 gets wired into the API/UI.
 
-Requires ANTHROPIC_API_KEY to be set.
+Requires DEEPSEEK_API_KEY to be set.
 
 Usage:
     uv run python scripts/cross_check_verification.py --document-id 7
@@ -29,7 +29,7 @@ from app.agents.cross_check_claim import cross_check_document, REVIEWABLE_VERDIC
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Cross-check a document's claim verifications using Claude as an independent second opinion."
+        description="Cross-check a document's claim verifications using DeepSeek as an independent second opinion."
     )
     parser.add_argument("--document-id", type=int, required=True)
     parser.add_argument(

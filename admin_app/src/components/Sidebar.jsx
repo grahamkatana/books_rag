@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Users, BookOpen, FileText, MessageSquare, LogOut, ShieldCheck, RefreshCw, Loader2, Flag } from "lucide-react";
 import { cn } from "../lib/utils";
-import { triggerIngest } from "../api/client";
+import { triggerIngest, UnauthorizedError } from "../api/client";
 import { pollJobUntilDone } from "../lib/pollJob";
 
 const NAV_ITEMS = [
@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { key: "flagged", label: "Flagged", icon: Flag },
 ];
 
-export default function Sidebar({ user, onLogout, activePage, onNavigate }) {
+export default function Sidebar({ user, onLogout, onSessionExpired, activePage, onNavigate }) {
   // null, or { phase: "running" | "done" | "error", text } -- both
   // pipelines are polled together since the button represents "ingest
   // everything," not either one individually; see BooksPage/PapersPage
@@ -30,16 +30,23 @@ export default function Sidebar({ user, onLogout, activePage, onNavigate }) {
         pollJobUntilDone(papers_task_id, { timeoutMs: 10 * 60 * 1000 }),
       ]);
       const [booksResult, papersResult] = results;
-      if (booksResult.status === "rejected" || papersResult.status === "rejected") {
-        const failures = [
-          booksResult.status === "rejected" ? `books: ${booksResult.reason.message}` : null,
-          papersResult.status === "rejected" ? `papers: ${papersResult.reason.message}` : null,
-        ].filter(Boolean);
-        setIngestStatus({ phase: "error", text: failures.join(" | ") });
+      const rejected = [booksResult, papersResult].filter((r) => r.status === "rejected");
+      // A dropped session mid-ingest should bounce to login, not render
+      // "Session expired" inline -- same as every page's error handlers.
+      if (rejected.some((r) => r.reason instanceof UnauthorizedError)) {
+        onSessionExpired();
+        return;
+      }
+      if (rejected.length) {
+        setIngestStatus({ phase: "error", text: rejected.map((r) => r.reason.message).join(" | ") });
       } else {
         setIngestStatus({ phase: "done", text: "Both pipelines finished." });
       }
     } catch (err) {
+      if (err instanceof UnauthorizedError) {
+        onSessionExpired();
+        return;
+      }
       setIngestStatus({ phase: "error", text: err.message });
     }
   };

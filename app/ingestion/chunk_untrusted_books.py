@@ -22,6 +22,8 @@ Usage:
     python -m app.ingestion.chunk_untrusted_books --force
 """
 
+import gc
+import ctypes
 import json
 import bisect
 from collections import Counter
@@ -29,6 +31,8 @@ from collections import Counter
 import pandas as pd
 import pdfplumber
 import tiktoken
+from pdfminer.pdfpage import PDFPage
+from pdfplumber.page import Page as PlumberPage
 
 from app.config import REPORT_PATH, PDF_DIR, CHUNKS_DIR, CHUNK_SIZE_TOKENS, CHUNK_OVERLAP_TOKENS
 from app.ingestion.chunk_cache import file_sha256, load_manifest, save_manifest, is_unchanged, update_manifest
@@ -67,13 +71,25 @@ def group_lines(chars: list, y_tol: float = 2.5) -> list:
     return result
 
 
+def _stream_pages(pdf):
+    """Yield (index, Page) one at a time WITHOUT touching pdf.pages.
+
+    pdf.pages eagerly parses every page's pdfminer LT tree and caches all of
+    them in self._pages, so a 1200-page book (Patton) holds its whole parse in
+    RAM at once and OOMs the 8GB Mac. Iterating PDFPage.create_pages directly
+    keeps only the current page's parse alive; we pull the text + heading out
+    of each page and drop it before the next one is built."""
+    for i, page_obj in enumerate(PDFPage.create_pages(pdf.doc)):
+        yield i, PlumberPage(pdf, page_obj, page_number=i + 1, initial_doctop=0)
+
+
 def find_body_text_size(pdf, sample_every: int = 5, max_samples: int = 60) -> float:
     """Surveys font sizes across a sample of pages to find the body-text
     size -- the most common size weighted by character count, since body
     text dominates any real page far more than headings do."""
     sizes = Counter()
     sampled = 0
-    for i, page in enumerate(pdf.pages):
+    for i, page in _stream_pages(pdf):
         if i % sample_every != 0:
             continue
         for ch in page.chars:
@@ -96,7 +112,7 @@ def extract_pages_with_headings(pdf, body_size: float) -> list:
     running_offset = 0
     current_heading = None
 
-    for i, page in enumerate(pdf.pages):
+    for i, page in _stream_pages(pdf):
         heading_at_start = current_heading
 
         for text, size in group_lines(page.chars):
@@ -116,6 +132,9 @@ def extract_pages_with_headings(pdf, body_size: float) -> list:
             "heading_at_start": heading_at_start,
         })
         running_offset = end + 1
+        # Free this page's flattened chars/rects/curves before the next page is
+        # parsed; _stream_pages() already bounds the raw LTPage lifetime.
+        page.flush_cache()
 
     return pages
 
@@ -229,8 +248,19 @@ def main(force: bool = False):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         update_manifest(manifest, book_title, current_hash, settings)
+        save_manifest(manifest)  # persist per-book so a mid-run OOM/SIGKILL doesn't lose completed books
         processed += 1
         print(f"  -> {len(chunks)} chunks written to {out_path} (body text detected at {body_size}pt)")
+        # Return the book's text to the OS. Without this, CPython holds freed
+        # heap across iterations and one 800-page book after another pushes the
+        # container over its memory cap (OOM-killed). malloc_trim is Linux-only,
+        # which is fine: the ingest image is linux/amd64.
+        del pages, chunks
+        gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
 
     save_manifest(manifest)
     print(f"\nDone. {processed} book(s) (re)chunked, {skipped} unchanged and skipped.")

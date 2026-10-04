@@ -126,14 +126,14 @@ cross_check_dict = {
             "cross_check": {
                 "agrees": False, "verdict": "unverifiable", "confidence": "medium",
                 "explanation": "The evidence does not actually address this.",
-                "is_checkable_claim": True, "model": "claude-sonnet-4-6",
+                "is_checkable_claim": True, "model": "deepseek-chat",
             },
         },
     }],
 }
 cc_report = report_script.build_report(cross_check_dict)
 assert "**Cross-checked:** 1 claim(s), 1 disagreement(s)" in cc_report
-assert "Cross-check (claude-sonnet-4-6): DISAGREES" in cc_report
+assert "Cross-check (deepseek-chat): DISAGREES" in cc_report
 assert "its own verdict: UNVERIFIABLE" in cc_report
 assert "Flagged: the cross-check model judges" not in cc_report
 print("OK")

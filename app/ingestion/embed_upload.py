@@ -18,9 +18,11 @@ Usage:
 import json
 import glob
 import hashlib
+import time
 
 from openai import OpenAI
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.http.models import Distance, VectorParams, PointStruct, PayloadSchemaType
 
 from app.config import (
@@ -28,15 +30,35 @@ from app.config import (
     EMBEDDING_MODEL, EMBEDDING_DIM,
 )
 
-BATCH_SIZE = 100
+BATCH_SIZE = 400  # OpenAI counts ~1.23x tiktoken here; 400 * ~617 = 247k < 300k req cap
+
+
+def _retry(fn, *args, attempts=6, base_delay=2.0, **kwargs):
+    """Retry a Qdrant call that can fail on a tunnel blip.
+
+    The k8s port-forward to Qdrant is flaky over long runs -- the TCP
+    connection occasionally drops ("write: broken pipe"), which qdrant_client
+    surfaces as ResponseHandlingException. retrieve() and upsert() are both
+    idempotent (same point ids, same payloads), so re-running after a short
+    backoff is safe and lets a multi-hour embed survive a blip instead of
+    crashing mid-run."""
+    last = None
+    for i in range(attempts):
+        try:
+            return fn(*args, **kwargs)
+        except ResponseHandlingException as e:
+            last = e
+            delay = base_delay * (2 ** i)
+            print(f"  [qdrant retry {i + 1}/{attempts}] {e}; waiting {delay:.0f}s")
+            time.sleep(delay)
+    raise last
 
 
 def ensure_collection(qdrant: QdrantClient, collection_name: str = QDRANT_COLLECTION):
-    if not qdrant.collection_exists(collection_name):
-        qdrant.create_collection(
-            collection_name=collection_name,
-            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
-        )
+    if not _retry(qdrant.collection_exists, collection_name):
+        _retry(qdrant.create_collection,
+               collection_name=collection_name,
+               vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE))
         print(f"Created collection '{collection_name}' ({EMBEDDING_DIM}-dim, cosine).")
 
     # Outside the "just created" branch on purpose -- this needs to run
@@ -49,11 +71,10 @@ def ensure_collection(qdrant: QdrantClient, collection_name: str = QDRANT_COLLEC
     # but exactly the kind of thing that quietly turns into a client-side
     # read timeout once a library has grown. create_payload_index is
     # idempotent -- safe to call on every run, not just the first.
-    qdrant.create_payload_index(
-        collection_name=collection_name,
-        field_name="source",
-        field_schema=PayloadSchemaType.KEYWORD,
-    )
+    _retry(qdrant.create_payload_index,
+           collection_name=collection_name,
+           field_name="source",
+           field_schema=PayloadSchemaType.KEYWORD)
 
 
 def load_all_chunks(chunks_dir=CHUNKS_DIR) -> list:
@@ -81,9 +102,8 @@ def get_existing_payloads(qdrant: QdrantClient, point_ids: list, collection_name
     by id. IDs that don't exist yet are simply absent from the result."""
     if not point_ids:
         return {}
-    records = qdrant.retrieve(
-        collection_name=collection_name, ids=point_ids, with_payload=True, with_vectors=False
-    )
+    records = _retry(qdrant.retrieve,
+                     collection_name=collection_name, ids=point_ids, with_payload=True, with_vectors=False)
     return {r.id: r.payload for r in records}
 
 
@@ -122,7 +142,7 @@ def embed_and_upsert(openai_client, qdrant: QdrantClient, chunks: list,
             PointStruct(id=pid, vector=v, payload={**c, "_embedding_model": model})
             for c, v, pid in zip(to_embed, embeddings, to_embed_ids)
         ]
-        qdrant.upsert(collection_name=collection_name, points=points)
+        _retry(qdrant.upsert, collection_name=collection_name, points=points)
         embedded += len(points)
         print(f"  embedded {embedded} new/changed, skipped {skipped} unchanged "
               f"({min(i + batch_size, len(chunks))}/{len(chunks)} checked)")

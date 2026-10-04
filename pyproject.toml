@@ -16,16 +16,16 @@ dependencies = [
     "flask-smorest>=0.47.0",
     "waitress>=3.0.2",
     "flask-cors>=6.0.5",
+    "prometheus-flask-exporter>=0.23.0",
     "gunicorn>=26.0.0",
     "pdfplumber>=0.11.10",
     "requests>=2.34.2",
     "psycopg[binary]>=3.3.4",
     "flask-jwt-extended>=4.7.4",
     "flask-admin>=2.2.0",
+    "flask-sqlalchemy>=3.1.0",
     "flask-login>=0.6.3",
     "python-json-logger>=4.1.0",
-    "docling>=2.105.0",
-    "docling-core[chunking-openai]>=2.83.1",
     "redis>=8.0.1",
     "celery>=5.6.3",
     "pydantic-ai-slim[anthropic,google,openai]>=2.0.0",
@@ -33,3 +33,4 @@ dependencies = [
 
 [tool.uv]
 package = false
+

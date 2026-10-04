@@ -17,6 +17,11 @@ data/papers/report.csv
 data/papers/chunks/
 pdfs/papers/*.pdf
 
+# The corpus dirs themselves are symlinks to local absolute paths --
+# machine-specific, so ignore the symlinks too (not just their contents).
+pdfs/books
+pdfs/papers
+
 # Python
 __pycache__/
 *.pyc
@@ -41,3 +46,8 @@ data/chunks/.manifest.json
 logs/
 *.docx
 backups/
+
+# local-run scripts + resume notes (contain secrets/creds, host-only)
+run_step.sh
+RESUME.md
+continue.md

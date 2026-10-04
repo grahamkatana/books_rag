@@ -1,10 +1,42 @@
+# Python / uv
 .venv
-.git
 __pycache__
 *.pyc
+
+# Git
+.git
+
+# Secrets / local config -- never bake a real .env or .http file into the
+# image (the .http leak happened before; don't repeat it).
 .env
+.env.*
+*.http
+
+# Local databases
 book_rag.db
-data/chunks/*.jsonl
-data/report.csv
-pdfs/books/*.pdf
-tests
+*.db-journal
+
+# Generated data (regeneratable from sources) + real source files.
+# The backend image must not contain the book/paper corpus (copyright + size).
+data/
+pdfs/
+logs/
+
+# Frontends are built as separate images, not part of the backend build
+# context -- keeping them out also shrinks the context a lot.
+frontend/
+admin_app/
+verify_app/
+node_modules/
+dist/
+
+# Tests
+tests/
+
+# Resume notes + local run scripts (internal paths/notes + hardcoded secrets, host-only)
+continue.md
+RESUME.md
+run_step.sh
+
+# OS noise
+.DS_Store

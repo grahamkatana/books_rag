@@ -56,7 +56,7 @@ export default function App() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <Sidebar user={user} onLogout={handleLogout} activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar user={user} onLogout={handleLogout} onSessionExpired={handleLogout} activePage={activePage} onNavigate={setActivePage} />
       {activePage === "users" && <UsersPage currentUser={user} onSessionExpired={handleLogout} />}
       {activePage === "books" && <BooksPage onSessionExpired={handleLogout} />}
       {activePage === "papers" && <PapersPage onSessionExpired={handleLogout} />}

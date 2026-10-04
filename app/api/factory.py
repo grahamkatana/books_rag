@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 from flask_smorest import Api
 from flask_jwt_extended import JWTManager
+from prometheus_flask_exporter import PrometheusMetrics
 
 from app.config import SECRET_KEY, JWT_SECRET_KEY
 from app.logging_config import setup_logging, get_logger
@@ -40,6 +41,11 @@ def create_app() -> Flask:
     CORS(app)
 
     JWTManager(app)
+
+    # Exposes /metrics for Prometheus. group_by="endpoint" keeps the `path`
+    # label to the flask-smorest endpoint name (stable) instead of the raw URL
+    # (which would explode cardinality on /api/v1/books/<uuid> paths).
+    metrics = PrometheusMetrics(app, group_by="endpoint")
 
     api = Api(app)
 

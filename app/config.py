@@ -26,9 +26,13 @@ DEFAULT_CHAT_MODEL = os.environ.get("DEFAULT_CHAT_MODEL", "gpt-5.4-mini")
 # provider than the primary verification agent (which uses
 # DEFAULT_CHAT_MODEL via OpenAI). Two same-provider models share
 # correlated blind spots; a genuinely different model is a meaningfully
-# stronger check on the same reasoning.
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
-CROSS_CHECK_MODEL = os.environ.get("CROSS_CHECK_MODEL", "claude-sonnet-4-6")
+# stronger check on the same reasoning. DeepSeek (an OpenAI-compatible
+# API, reached through pydantic-ai's OpenAI provider pointed at its own
+# base URL) is the cheap independent provider here -- Claude was dropped
+# for cost.
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+CROSS_CHECK_MODEL = os.environ.get("CROSS_CHECK_MODEL", "deepseek-chat")
 
 # Used by app/agents/document_context.py -- a cheap, fast pass over the
 # whole document BEFORE extraction/verification begin, giving both

@@ -173,6 +173,7 @@ def main(force: bool = False):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         update_manifest(manifest, book_title, current_hash, settings)
+        save_manifest(manifest)  # persist per-book so a mid-run OOM/SIGKILL doesn't lose completed books
         processed += 1
         logger.info("Processing %s ...", file_name)
         logger.info("  -> %d chunks written to %s", len(chunks), out_path)

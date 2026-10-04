@@ -56,10 +56,19 @@ async function request(path, options = {}) {
 }
 
 export async function login(email, password) {
-  const data = await request("/auth/login", {
+  // Deliberately NOT via request(): a wrong password is a 401 from
+  // /auth/login, but request() treats every 401 as an expired session and
+  // would surface "Session expired" instead of "Invalid email or password".
+  const res = await fetch(`${API_BASE}/auth/login`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new ApiError(body.message || "Login failed", res.status);
+  }
+  const data = await res.json();
   setToken(data.access_token);
   return data;
 }

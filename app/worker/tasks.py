@@ -135,7 +135,7 @@ def rerun_verification_task(self, document_id: int, from_extraction: bool = True
 @celery_app.task(name="cross_check_document_task", bind=True)
 def cross_check_document_task(self, document_id: int, verdicts_to_check: list[str] | None = None) -> dict:
     """Cross-checks every reviewable claim in a document using a
-    different model provider (Claude) than the primary verification --
+    different model provider (DeepSeek) than the primary verification --
     see app/agents/cross_check_claim.py for the full reasoning. A
     document's worth of claims means a document's worth of sequential
     model calls, same scale concern as the primary verification

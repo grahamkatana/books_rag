@@ -13,7 +13,7 @@ Endpoints:
     GET    /api/v1/verification/<id>                  full detail: claims, verdicts, evidence
     DELETE /api/v1/verification/<id>                  delete a verification document and everything under it
     POST   /api/v1/verification/<id>/rerun             re-extract+re-verify, or just re-verify, an already-verified document
-    POST   /api/v1/verification/<id>/cross-check       cross-check existing verdicts using a second model (Claude)
+    POST   /api/v1/verification/<id>/cross-check       cross-check existing verdicts using a second model (DeepSeek)
 
 The upload endpoint only does the fast, synchronous part (save the
 file, create the row) and hands the rest -- convert, extract claims,

@@ -1,6 +1,6 @@
 """
 Cross-checks a claim's verification using a different model provider
-(Claude/Anthropic) than the primary verification agent (OpenAI) -- an
+(DeepSeek) than the primary verification agent (OpenAI) -- an
 independent second opinion, not another retrieval pass.
 
 Deliberately reviews the SAME evidence the primary verification cited,
@@ -20,8 +20,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.config import CROSS_CHECK_MODEL
+from app.config import CROSS_CHECK_MODEL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 from app.db.session import get_session
 from app.models.verification import VerificationDocument, ExtractedClaim, ClaimVerification, ClaimCrossCheck
 from app.logging_config import get_logger
@@ -78,8 +79,13 @@ CROSS_CHECK_SYSTEM_PROMPT = (
 
 
 def build_cross_check_agent(model: str = CROSS_CHECK_MODEL) -> Agent:
+    # DeepSeek's API is OpenAI-compatible, so it rides pydantic-ai's
+    # OpenAI provider with the base_url repointed -- no dedicated
+    # provider or new dependency needed.
+    provider = OpenAIProvider(base_url=DEEPSEEK_BASE_URL, api_key=DEEPSEEK_API_KEY)
     return Agent(
-        f"anthropic:{model}",
+        f"openai-chat:{model}",
+        provider=provider,
         output_type=CrossCheckResult,
         system_prompt=CROSS_CHECK_SYSTEM_PROMPT,
     )

@@ -2,7 +2,7 @@ import sys
 sys.path.insert(0, ".")
 
 import os
-os.environ.setdefault("ANTHROPIC_API_KEY", "dummy-test-key")
+os.environ.setdefault("DEEPSEEK_API_KEY", "dummy-test-key")
 os.environ.setdefault("OPENAI_API_KEY", "dummy-test-key")
 
 from pydantic_ai.models.test import TestModel
