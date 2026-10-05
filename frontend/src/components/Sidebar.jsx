@@ -22,11 +22,15 @@ function groupChatsByDate(chats) {
   return groups;
 }
 
-export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, user, onLogout }) {
+export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, user, onLogout, open }) {
   const groups = groupChatsByDate(chats);
 
   return (
-    <aside className="w-64 shrink-0 border-r border-border bg-muted/40 h-full flex flex-col">
+    <aside className={cn(
+      "fixed inset-y-0 left-0 z-40 w-64 max-w-[85vw] shrink-0 border-r border-border bg-card flex flex-col transition-transform",
+      "md:static md:z-auto md:h-full md:translate-x-0 md:bg-muted/40",
+      open ? "translate-x-0" : "-translate-x-full"
+    )}>
       <div className="p-3">
         <Button variant="outline" size="sm" onClick={onNewChat} className="w-full justify-start gap-2 bg-card">
           <Plus className="h-4 w-4" /> New chat
@@ -62,7 +66,7 @@ export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, 
                       <DropdownMenuTrigger asChild>
                         <button
                           onClick={(e) => e.stopPropagation()}
-                          className="mr-1 shrink-0 rounded-sm p-1 opacity-0 group-hover:opacity-100 hover:bg-background/60 focus:opacity-100"
+                          className="mr-1 shrink-0 rounded-sm p-1 md:opacity-0 md:group-hover:opacity-100 hover:bg-background/60 focus:opacity-100"
                           title="Chat options"
                         >
                           <MoreHorizontal className="h-3.5 w-3.5" />

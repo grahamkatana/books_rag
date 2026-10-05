@@ -51,7 +51,7 @@ export default function MessageBubble({ message, onCitationClick }) {
     // *asterisks* someone typed as formatting).
     return (
       <div className="flex justify-end">
-        <div className="max-w-[75%] rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-[15px] leading-relaxed text-primary-foreground whitespace-pre-wrap">
+        <div className="max-w-[85%] md:max-w-[75%] break-words rounded-2xl rounded-br-sm bg-primary px-4 py-3 text-[15px] leading-relaxed text-primary-foreground whitespace-pre-wrap">
           {content}
         </div>
       </div>
@@ -66,7 +66,7 @@ export default function MessageBubble({ message, onCitationClick }) {
       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
         <Library className="h-4 w-4" />
       </div>
-      <div className="flex-1 text-[15px] leading-relaxed text-foreground">
+      <div className="flex-1 min-w-0 break-words text-[15px] leading-relaxed text-foreground">
         {!content ? (
           <span className="text-muted-foreground">Thinking…</span>
         ) : (
@@ -84,7 +84,7 @@ export default function MessageBubble({ message, onCitationClick }) {
         {content && (
           <button
             onClick={copyToClipboard}
-            className="mt-1 flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover:opacity-100"
+            className="mt-1 flex items-center gap-1 rounded-sm px-1.5 py-1 text-xs text-muted-foreground transition-opacity hover:bg-accent hover:text-accent-foreground md:opacity-0 md:group-hover:opacity-100"
             title="Copy"
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

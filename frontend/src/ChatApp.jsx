@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { Menu, Plus } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import CitationPanel from "./components/CitationPanel";
@@ -21,6 +22,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [selectedSources, setSelectedSources] = useState([]); // empty = search every item in the current corpus
   const [corpus, setCorpus] = useState("books"); // "books" | "papers" | "both"
+  const [navOpen, setNavOpen] = useState(false); // mobile only: the sidebar is a slide-in drawer below md
 
   const handleError = useCallback((err) => {
     if (err instanceof UnauthorizedError) {
@@ -45,6 +47,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   }, [loadChats, handleError]);
 
   const selectChat = async (chatId) => {
+    setNavOpen(false);
     setActiveChatId(chatId);
     setSelectedCitation(null);
     setSelectedSources([]); // scope isn't persisted per chat -- always reopen unscoped
@@ -57,6 +60,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   };
 
   const startNewChat = () => {
+    setNavOpen(false);
     setActiveChatId(null);
     setMessages([]);
     setSelectedCitation(null);
@@ -156,8 +160,19 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   };
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="flex h-dvh w-full flex-col overflow-hidden md:flex-row">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-2 md:hidden">
+        <button onClick={() => setNavOpen(true)} title="Chats" className="rounded-md p-2 text-muted-foreground hover:bg-accent">
+          <Menu className="h-5 w-5" />
+        </button>
+        <span className="text-sm font-semibold text-foreground">Book RAG</span>
+        <button onClick={startNewChat} title="New chat" className="rounded-md p-2 text-muted-foreground hover:bg-accent">
+          <Plus className="h-5 w-5" />
+        </button>
+      </div>
+      {navOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setNavOpen(false)} />}
       <Sidebar
+        open={navOpen}
         chats={chats}
         activeChatId={activeChatId}
         onSelectChat={selectChat}

@@ -36,10 +36,11 @@ export default function ClaimPanel({ claim, onClose, overlay = false }) {
   return (
     <aside
       className={
-        "w-96 shrink-0 bg-card flex flex-col " +
-        (overlay
-          ? "fixed right-0 top-0 h-full border-l border-border shadow-2xl z-50"
-          : "h-full border-l border-border")
+        // Below md the panel always takes the whole screen; from md up it
+        // is a 24rem column -- floating over the document in presentation
+        // mode (overlay), in the normal flow beside it otherwise.
+        "fixed inset-0 z-50 shrink-0 bg-card flex flex-col md:w-96 md:border-l md:border-border " +
+        (overlay ? "md:left-auto md:shadow-2xl" : "md:static md:z-auto md:h-full")
       }
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">

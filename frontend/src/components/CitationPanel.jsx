@@ -10,7 +10,7 @@ export default function CitationPanel({ citation, book, paper, onClose }) {
   const verified = source?.bibliography_verified;
 
   return (
-    <aside className="w-80 shrink-0 border-l border-border bg-card h-full flex flex-col">
+    <aside className="fixed inset-0 z-50 shrink-0 bg-card flex flex-col md:static md:z-auto md:h-full md:w-80 md:border-l md:border-border">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-sm font-semibold text-foreground">Source</h2>
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose} title="Close">

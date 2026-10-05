@@ -23,8 +23,8 @@ export default function ChatInput({
   };
 
   return (
-    <div className="border-t border-border bg-background px-4 py-3">
-      <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2">
+    <div className="border-t border-border bg-background px-3 py-3 md:px-4">
+      <div className="max-w-2xl mx-auto mb-2 flex flex-wrap items-center gap-2">
         <CorpusToggle value={corpus} onChange={handleCorpusChange} disabled={disabled} />
 
         {/* Scoping to specific sources only makes sense within a single

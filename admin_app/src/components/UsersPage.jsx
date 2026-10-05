@@ -101,8 +101,8 @@ export default function UsersPage({ currentUser, onSessionExpired }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto thin-scrollbar p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="flex-1 min-h-0 min-w-0 overflow-y-auto thin-scrollbar p-4 md:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Users</h1>
           <p className="text-sm text-muted-foreground">Manage who can log in and who has admin access.</p>

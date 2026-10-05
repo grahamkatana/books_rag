@@ -66,3 +66,15 @@ body {
 .thin-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Mobile: iOS Safari zooms the whole page when a focused field is under
+   16px, and wide markdown tables would otherwise push the page sideways. */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px;
+  }
+  .prose table {
+    display: block;
+    overflow-x: auto;
+  }
+}

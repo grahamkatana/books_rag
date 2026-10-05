@@ -110,8 +110,8 @@ export default function PapersPage({ onSessionExpired }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto thin-scrollbar p-6">
-      <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="flex-1 min-h-0 min-w-0 overflow-y-auto thin-scrollbar p-4 md:p-6">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold text-foreground">Papers</h1>
           <p className="text-sm text-muted-foreground">

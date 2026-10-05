@@ -21,11 +21,11 @@ export default function ChatWindow({
   }, [messages]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-background">
+    <div className="flex-1 min-h-0 min-w-0 flex flex-col md:h-full bg-background">
       <div className="flex-1 overflow-y-auto thin-scrollbar px-4 py-6">
         <div className="max-w-2xl mx-auto space-y-6">
           {messages.length === 0 && (
-            <div className="text-center text-muted-foreground mt-24">
+            <div className="text-center text-muted-foreground mt-12 md:mt-24">
               <p className="text-lg font-medium text-foreground/80">Ask your library something</p>
               <p className="text-sm mt-1">Answers cite the exact source and page they came from.</p>
             </div>

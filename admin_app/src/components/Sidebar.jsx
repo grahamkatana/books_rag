@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { key: "flagged", label: "Flagged", icon: Flag },
 ];
 
-export default function Sidebar({ user, onLogout, onSessionExpired, activePage, onNavigate }) {
+export default function Sidebar({ user, onLogout, onSessionExpired, activePage, onNavigate, open }) {
   // null, or { phase: "running" | "done" | "error", text } -- both
   // pipelines are polled together since the button represents "ingest
   // everything," not either one individually; see BooksPage/PapersPage
@@ -52,7 +52,11 @@ export default function Sidebar({ user, onLogout, onSessionExpired, activePage, 
   };
 
   return (
-    <aside className="w-56 shrink-0 border-r border-border bg-muted/40 h-full flex flex-col">
+    <aside className={cn(
+      "fixed inset-y-0 left-0 z-40 w-56 max-w-[85vw] shrink-0 border-r border-border bg-card flex flex-col transition-transform",
+      "md:static md:z-auto md:h-full md:translate-x-0 md:bg-muted/40",
+      open ? "translate-x-0" : "-translate-x-full"
+    )}>
       <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
         <ShieldCheck className="h-5 w-5 text-primary" />
         <span className="text-sm font-semibold text-foreground">Book RAG Admin</span>

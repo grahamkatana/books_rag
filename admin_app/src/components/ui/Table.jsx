@@ -3,7 +3,7 @@ import { cn } from "../../lib/utils";
 function Table({ className, ...props }) {
   return (
     <div className="w-full overflow-auto rounded-md border border-border">
-      <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+      <table className={cn("w-full min-w-[640px] md:min-w-0 caption-bottom text-sm", className)} {...props} />
     </div>
   );
 }

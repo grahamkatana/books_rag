@@ -33,7 +33,7 @@ export default function App() {
 
   if (authState === "checking") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-dvh w-full items-center justify-center text-sm text-muted-foreground">
         Loading…
       </div>
     );

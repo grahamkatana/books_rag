@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, ShieldCheck, RefreshCw, ShieldQuestion } from "lucide-react";
+import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, ShieldCheck, RefreshCw, ShieldQuestion, Menu } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/Dialog";
@@ -83,6 +83,7 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
   const [crossCheckStatus, setCrossCheckStatus] = useState(null);
 
   const [isPresentationMode, setIsPresentationMode] = useState(false);
+  const [navOpen, setNavOpen] = useState(false); // mobile only: the sidebar is a slide-in drawer below md
 
   const handleError = useCallback((err) => {
     if (err instanceof UnauthorizedError) onSessionExpired();
@@ -245,9 +246,26 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
   const actionsDisabled = selectedDoc && (selectedDoc.status !== "done" && selectedDoc.status !== "failed");
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div className="flex h-dvh w-full flex-col overflow-hidden md:flex-row">
       {!isPresentationMode && (
-        <aside className="w-72 shrink-0 border-r border-border bg-muted/40 flex flex-col">
+        <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2 md:hidden">
+          <button onClick={() => setNavOpen(true)} title="Documents" className="rounded-md p-2 text-muted-foreground hover:bg-accent">
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-semibold text-foreground">Book RAG Verify</span>
+        </div>
+      )}
+      {navOpen && !isPresentationMode && (
+        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setNavOpen(false)} />
+      )}
+      {!isPresentationMode && (
+        <aside
+          className={
+            "fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] shrink-0 border-r border-border bg-card flex flex-col transition-transform " +
+            "md:static md:z-auto md:translate-x-0 md:bg-muted/40 " +
+            (navOpen ? "translate-x-0" : "-translate-x-full")
+          }
+        >
           <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
             <ShieldCheck className="h-5 w-5 text-primary" />
             <span className="text-sm font-semibold text-foreground">Book RAG Verify</span>
@@ -280,7 +298,7 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
               documents.map((doc) => (
                 <button
                   key={doc.id}
-                  onClick={() => selectDocument(doc.id)}
+                  onClick={() => { setNavOpen(false); selectDocument(doc.id); }}
                   className={
                     "w-full flex flex-col gap-1 rounded-md px-2.5 py-2 text-left transition-colors " +
                     (selectedId === doc.id ? "bg-accent" : "hover:bg-accent/60")
@@ -312,9 +330,9 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
         </aside>
       )}
 
-      <main className="flex-1 overflow-hidden flex flex-col">
+      <main className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
         {!selectedId ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
             Select a document, or upload a new one.
           </div>
         ) : detailLoading ? (
@@ -322,10 +340,10 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
         ) : selectedDoc ? (
           <>
             {!isPresentationMode && (
-              <div className="px-6 py-4 border-b border-border shrink-0 space-y-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h1 className="text-lg font-semibold text-foreground">{selectedDoc.filename}</h1>
+              <div className="px-4 py-3 md:px-6 md:py-4 border-b border-border shrink-0 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                  <div className="min-w-0">
+                    <h1 className="text-base md:text-lg font-semibold text-foreground break-words">{selectedDoc.filename}</h1>
                     <div className="mt-1"><StatusBadge status={selectedDoc.status} /></div>
                   </div>
                   <div className="flex items-center gap-1.5">

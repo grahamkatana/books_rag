@@ -95,7 +95,7 @@ export default function FlaggedPage({ onSessionExpired }) {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto thin-scrollbar p-6">
+    <div className="flex-1 min-h-0 min-w-0 overflow-y-auto thin-scrollbar p-4 md:p-6">
       <div className="mb-6">
         <h1 className="text-lg font-semibold text-foreground">Flagged for Review</h1>
         <p className="text-sm text-muted-foreground">

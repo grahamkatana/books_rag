@@ -30,7 +30,7 @@ export default function Login({ onSuccess }) {
   };
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center bg-background">
+    <div className="flex h-dvh w-full items-center justify-center bg-background px-4">
       <form
         onSubmit={submit}
         className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm space-y-4"
