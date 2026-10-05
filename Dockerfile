@@ -11,6 +11,12 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv \
     PATH="/app/.venv/bin:$PATH"
 
+# pandoc converts uploaded .docx files to markdown for the verification
+# pipeline (app/ingestion/convert_docx.py).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pandoc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first, in their own layer -- this is cached and
 # skipped on rebuilds unless pyproject.toml/uv.lock actually change, so
 # editing application code doesn't trigger a full dependency reinstall.

@@ -1,11 +1,8 @@
 """
-Converts an uploaded .docx into markdown using Docling -- the same
-DocumentConverter already used for papers (app/ingestion/chunk_papers.py),
-reused here rather than adding a second document-parsing library for
-what's fundamentally the same kind of task: turn a real document format
-into clean, structure-aware markdown. Requires `docling` to be
-installed (see the README's papers-pipeline setup -- same dependency,
-no second heavy install needed if you've already got it for papers).
+Converts an uploaded .docx into markdown using pandoc (the system
+binary, installed in the Dockerfile). Docling did this originally, but
+it drags in torch (~3GB image) for what a .docx -- already structured
+XML, no layout analysis needed -- doesn't require.
 
 This module owns the FIRST stage of the verification pipeline only:
 save the upload, convert it, record the result. Claim extraction and
@@ -15,6 +12,7 @@ visible and retryable in VerificationDocument.status, the same
 philosophy as every other multi-step pipeline in this project.
 """
 
+import subprocess
 from pathlib import Path
 
 from app.config import VERIFICATION_UPLOADS_DIR
@@ -26,16 +24,20 @@ logger = get_logger(__name__)
 
 
 def convert_docx_to_markdown(docx_path: Path) -> str:
-    """The one function that actually calls Docling. Deliberately thin
-    -- conversion only, no markdown post-processing here -- so this can
-    be swapped or extended without touching whatever calls it, and so
-    importing this module doesn't require docling to be installed at
-    all unless this specific function actually runs (lazy import,
-    same pattern chunk_papers.py already uses)."""
-    from docling.document_converter import DocumentConverter
+    """The one function that actually calls the converter. Deliberately
+    thin -- conversion only, no markdown post-processing here -- so this
+    can be swapped or extended without touching whatever calls it.
 
-    result = DocumentConverter().convert(str(docx_path))
-    return result.document.export_to_markdown()
+    --sandbox: the .docx is an untrusted upload, so pandoc gets no
+    network or filesystem access beyond the input file itself. The
+    timeout stops a pathological document from pinning the worker."""
+    result = subprocess.run(
+        ["pandoc", "--sandbox", "--from", "docx", "--to", "gfm", "--wrap", "none", str(docx_path)],
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"pandoc exited with status {result.returncode}")
+    return result.stdout
 
 
 def save_upload(file_bytes: bytes, filename: str, document_id: int) -> Path:

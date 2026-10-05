@@ -34,4 +34,13 @@ celery_app.conf.update(
     # versus "still sitting in the queue." Cheap to enable, genuinely
     # useful for the polling status endpoint built on top of this.
     task_track_started=True,
+    # Verification gets its own queue so a worker can be run for it alone
+    # (`-Q verification`) without also picking up the admin ingest/delete
+    # tasks, which need the corpus on disk. A worker started with no -Q
+    # needs `-Q celery,verification` to consume both.
+    task_routes={
+        "run_verification_pipeline_task": {"queue": "verification"},
+        "rerun_verification_task": {"queue": "verification"},
+        "cross_check_document_task": {"queue": "verification"},
+    },
 )

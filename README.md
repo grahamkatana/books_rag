@@ -718,7 +718,7 @@ linked the way book editions are.
 Run a new migration: `uv run alembic revision --autogenerate -m "message"`
 Migrate: `uv run alembic upgrade head`
 
-Run celery tasks: `uv run celery -A app.worker.celery_app worker --loglevel=info --pool=solo`
+Run celery tasks: `uv run celery -A app.worker.celery_app worker -Q celery,verification --loglevel=info --pool=solo` (verification tasks are on their own `verification` queue; needs `pandoc` installed for .docx uploads)
 
 uv run python scripts/cross_check_verification.py --document-id 1
 uv run python scripts/cross_check_verification.py --document-id 1 --verdicts contradicted supported
