@@ -159,3 +159,8 @@ CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
 # useful for debugging a bad conversion or re-running it later without
 # asking the user to re-upload.
 VERIFICATION_UPLOADS_DIR = BASE_DIR / "data" / "verification_uploads"
+
+# Ceiling on pasted text sent to POST /api/v1/verification/text. Every
+# extracted claim costs model calls, so this is a cost guard as much as a
+# size one -- a few pages; anything longer should go through the .docx upload.
+MAX_VERIFICATION_TEXT_CHARS = int(os.environ.get("MAX_VERIFICATION_TEXT_CHARS", "20000"))

@@ -102,6 +102,12 @@ export function uploadDocument(file) {
   return request("/verification/", { method: "POST", body: formData });
 }
 
+// Same response shape and same polling as uploadDocument -- the text is
+// stored as the document's markdown directly, there's just no file.
+export function submitText(text, title) {
+  return request("/verification/text", { method: "POST", body: JSON.stringify({ text, title: title || null }) });
+}
+
 export function deleteDocument(id) {
   return request(`/verification/${id}`, { method: "DELETE" });
 }

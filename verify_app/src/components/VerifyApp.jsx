@@ -1,14 +1,17 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Upload, FileText, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, ShieldCheck, RefreshCw, ShieldQuestion, Menu } from "lucide-react";
+import { Upload, FileText, ClipboardPaste, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, ShieldCheck, RefreshCw, ShieldQuestion, Menu } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/Dialog";
 import {
-  fetchDocuments, fetchDocument, uploadDocument, deleteDocument,
+  fetchDocuments, fetchDocument, uploadDocument, submitText, deleteDocument,
   rerunDocument, crossCheckDocument, UnauthorizedError,
 } from "../api/client";
 import { pollDocumentUntilDone, pollClaimsCrossChecked } from "../lib/pollDocument";
 import DocumentViewer from "./DocumentViewer";
+
+// Mirrors the API's MAX_VERIFICATION_TEXT_CHARS default (app/config.py).
+const MAX_TEXT_CHARS = 20000;
 
 const STATUS_LABELS = {
   uploaded: "Queued",
@@ -83,6 +86,9 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
   const [crossCheckStatus, setCrossCheckStatus] = useState(null);
 
   const [isPresentationMode, setIsPresentationMode] = useState(false);
+  const [textDialogOpen, setTextDialogOpen] = useState(false);
+  const [pastedText, setPastedText] = useState("");
+  const [pastedTitle, setPastedTitle] = useState("");
   const [navOpen, setNavOpen] = useState(false); // mobile only: the sidebar is a slide-in drawer below md
 
   const handleError = useCallback((err) => {
@@ -153,16 +159,14 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
     }
   };
 
-  const handleFileSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-
-    setUploadStatus({ phase: "uploading", text: `Uploading ${file.name}...` });
+  // Shared by file upload and pasted text: start the job, then follow
+  // the resulting document until it settles.
+  const runVerification = async (label, startingText, start) => {
+    setUploadStatus({ phase: "uploading", text: startingText });
     try {
-      const { source_key } = await uploadDocument(file);
+      const { source_key } = await start();
       const documentId = Number(source_key);
-      setUploadStatus({ phase: "processing", text: `Verifying "${file.name}"...` });
+      setUploadStatus({ phase: "processing", text: `Verifying "${label}"...` });
       await loadDocuments();
       selectDocument(documentId);
 
@@ -170,7 +174,7 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
       setUploadStatus(
         finished.status === "failed"
           ? { phase: "error", text: finished.error_message || "Verification failed." }
-          : { phase: "done", text: `"${file.name}" verified.` }
+          : { phase: "done", text: `"${label}" verified.` }
       );
       await loadDocuments();
       selectDocument(documentId);
@@ -181,6 +185,25 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
       }
       setUploadStatus({ phase: "error", text: err.message });
     }
+  };
+
+  const handleFileSelected = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    runVerification(file.name, `Uploading ${file.name}...`, () => uploadDocument(file));
+  };
+
+  const handleTextSubmit = (e) => {
+    e.preventDefault();
+    const text = pastedText.trim();
+    if (!text) return;
+    const title = pastedTitle.trim();
+    setTextDialogOpen(false);
+    setNavOpen(false);
+    setPastedText("");
+    setPastedTitle("");
+    runVerification(title || "pasted text", "Submitting text...", () => submitText(text, title));
   };
 
   const handleRerun = async () => {
@@ -243,6 +266,7 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
     }
   };
 
+  const isSubmitting = uploadStatus?.phase === "uploading" || uploadStatus?.phase === "processing";
   const actionsDisabled = selectedDoc && (selectedDoc.status !== "done" && selectedDoc.status !== "failed");
 
   return (
@@ -274,11 +298,20 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
           <div className="p-3">
             <Button
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadStatus?.phase === "uploading" || uploadStatus?.phase === "processing"}
+              disabled={isSubmitting}
               className="w-full gap-1.5"
             >
               <Upload className="h-3.5 w-3.5" />
               Upload document
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setTextDialogOpen(true)}
+              disabled={isSubmitting}
+              className="mt-2 w-full gap-1.5 bg-card"
+            >
+              <ClipboardPaste className="h-3.5 w-3.5" />
+              Paste text
             </Button>
             <input ref={fileInputRef} type="file" accept=".docx" className="hidden" onChange={handleFileSelected} />
           </div>
@@ -429,6 +462,43 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
           </>
         ) : null}
       </main>
+
+      <Dialog open={textDialogOpen} onOpenChange={setTextDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <form onSubmit={handleTextSubmit} className="space-y-3">
+            <DialogHeader>
+              <DialogTitle>Verify pasted text</DialogTitle>
+              <DialogDescription>
+                Paste a paragraph or a few pages. For a whole chapter, upload the .docx instead.
+              </DialogDescription>
+            </DialogHeader>
+            <input
+              type="text"
+              value={pastedTitle}
+              onChange={(e) => setPastedTitle(e.target.value)}
+              maxLength={120}
+              placeholder="Title (optional)"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <textarea
+              value={pastedText}
+              onChange={(e) => setPastedText(e.target.value)}
+              maxLength={MAX_TEXT_CHARS}
+              rows={10}
+              autoFocus
+              placeholder="Paste the text to check..."
+              className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground text-right">
+              {pastedText.length.toLocaleString()} / {MAX_TEXT_CHARS.toLocaleString()} characters
+            </p>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setTextDialogOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={!pastedText.trim()}>Verify</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent>

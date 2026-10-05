@@ -52,14 +52,19 @@ def save_upload(file_bytes: bytes, filename: str, document_id: int) -> Path:
     return saved_path
 
 
-def create_verification_document(filename: str, user_id: int | None = None) -> int:
+def create_verification_document(filename: str, user_id: int | None = None, markdown: str | None = None) -> int:
     """Creates the VerificationDocument row only, status="uploaded" --
     deliberately separated from saving the file or converting it, so
     an API endpoint can do just this much (fast, synchronous) and hand
     everything else off to a background job, the same shape as every
     other upload-triggers-a-pipeline flow in this project."""
     with get_session() as session:
-        doc = VerificationDocument(user_id=user_id, filename=filename, status="uploaded")
+        # markdown given = pasted text rather than a file: there is nothing
+        # to convert, so the row starts where a converted upload would be.
+        doc = VerificationDocument(
+            user_id=user_id, filename=filename, markdown=markdown,
+            status="extracting_claims" if markdown else "uploaded",
+        )
         session.add(doc)
         session.flush()
         return doc.id

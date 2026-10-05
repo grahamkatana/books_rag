@@ -9,6 +9,7 @@ check rather than admin_required.
 
 Endpoints:
     POST   /api/v1/verification/                     upload a .docx, enqueue the pipeline
+    POST   /api/v1/verification/text                 verify pasted text instead of a file
     GET    /api/v1/verification/                      list the current user's verification documents
     GET    /api/v1/verification/<id>                  full detail: claims, verdicts, evidence
     DELETE /api/v1/verification/<id>                  delete a verification document and everything under it
@@ -59,7 +60,7 @@ from app.models.verification import VerificationDocument
 from app.agents.cross_check_claim import REVIEWABLE_VERDICTS
 from app.api.v1.schemas import (
     VerificationDocumentSummarySchema, VerificationDocumentDetailSchema, JobQueuedSchema,
-    RerunQuerySchema, CrossCheckQuerySchema, CrossCheckQueuedSchema,
+    RerunQuerySchema, CrossCheckQuerySchema, CrossCheckQueuedSchema, VerificationTextSchema,
 )
 from app.api.v1.serializers import verification_document_to_summary_dict, verification_document_to_detail_dict
 
@@ -108,6 +109,42 @@ class VerificationList(MethodView):
 
         from app.worker.tasks import run_verification_pipeline_task
         async_result = run_verification_pipeline_task.delay(document_id, str(saved_path))
+        return {"task_id": async_result.id, "source_key": str(document_id), "status": "queued"}
+
+
+def _title_from_text(text: str, max_len: int = 60) -> str:
+    """The document list shows a filename; pasted text has none, so use
+    its first line, cut at a word boundary."""
+    first_line = text.split("\n", 1)[0].strip().lstrip("#").strip()
+    if len(first_line) <= max_len:
+        return first_line or "Pasted text"
+    return first_line[:max_len].rsplit(" ", 1)[0] + "…"
+
+
+@blp.route("/text")
+class VerificationText(MethodView):
+    @jwt_required()
+    @blp.arguments(VerificationTextSchema)
+    @blp.response(202, JobQueuedSchema)
+    def post(self, args):
+        """Verifies pasted text instead of an uploaded file. The text is
+        stored as the document's markdown directly -- there's nothing to
+        convert -- and handed to rerun_verification_task, which already
+        does exactly "extract claims from stored markdown, then verify
+        them". Poll GET /api/v1/verification/<id> the same way as an
+        upload."""
+        user_id = int(get_jwt_identity())
+        # Postgres text columns reject NUL bytes outright.
+        text = args["text"].replace("\x00", "").strip()
+        if not text:
+            abort(400, message="No text provided.")
+        title = (args.get("title") or "").strip() or _title_from_text(text)
+
+        from app.ingestion.convert_docx import create_verification_document
+        document_id = create_verification_document(title, user_id=user_id, markdown=text)
+
+        from app.worker.tasks import rerun_verification_task
+        async_result = rerun_verification_task.delay(document_id, from_extraction=True)
         return {"task_id": async_result.id, "source_key": str(document_id), "status": "queued"}
 
 

@@ -1,7 +1,7 @@
 from marshmallow import Schema, fields
-from marshmallow.validate import OneOf
+from marshmallow.validate import Length, OneOf
 
-from app.config import DEFAULT_TOP_K, DEFAULT_CHAT_MODEL
+from app.config import DEFAULT_TOP_K, DEFAULT_CHAT_MODEL, MAX_VERIFICATION_TEXT_CHARS
 
 
 class AskRequestSchema(Schema):
@@ -139,6 +139,15 @@ class VerificationDocumentDetailSchema(VerificationDocumentSummarySchema):
     markdown = fields.Str(allow_none=True)
     document_context = fields.Str(allow_none=True)
     claims = fields.List(fields.Nested(ExtractedClaimSchema))
+
+
+class VerificationTextSchema(Schema):
+    text = fields.Str(required=True, validate=Length(min=1, max=MAX_VERIFICATION_TEXT_CHARS), metadata={
+        "description": "The text to verify, treated as markdown"
+    })
+    title = fields.Str(load_default=None, allow_none=True, validate=Length(max=120), metadata={
+        "description": "Shown in the document list; defaults to the first few words of the text"
+    })
 
 
 class RerunQuerySchema(Schema):

@@ -49,7 +49,8 @@ with tempfile.TemporaryDirectory() as tmp:
 
         with patch("app.ingestion.convert_docx.convert_uploaded_document", return_value=True), \
              patch("app.agents.extract_claims.run_claim_extraction", return_value=0), \
-             patch("app.agents.verify_document.verify_document_claims", return_value={"verified": 0, "failed": 0}):
+             patch("app.agents.verify_document.verify_document_claims", return_value={"verified": 0, "failed": 0}), \
+             patch("app.agents.rerun_verification.rerun_verification", return_value={"verified": 0, "failed": 0}) as rerun_mock:
 
             print("--- non-docx file: 400 ---")
             r = client.post("/api/v1/verification/", data={"file": (io.BytesIO(b"not a docx"), "notes.txt")},
@@ -60,6 +61,33 @@ with tempfile.TemporaryDirectory() as tmp:
             print("\n--- no file: 400 ---")
             r = client.post("/api/v1/verification/", data={}, content_type="multipart/form-data", headers=h_a)
             assert r.status_code == 400
+            print("OK")
+
+            print("\n--- pasted text: stored as markdown, titled from its first line, queued ---")
+            r = client.post("/api/v1/verification/text", json={"text": "  # Notes on governance\n\nSixty percent of teams use AI daily.\x00  "}, headers=h_a)
+            assert r.status_code == 202, r.get_json()
+            text_doc_id = int(r.get_json()["source_key"])
+            with get_session() as session:
+                text_doc = session.get(VerificationDocument, text_doc_id)
+                assert text_doc.filename == "Notes on governance"
+                assert text_doc.markdown == "# Notes on governance\n\nSixty percent of teams use AI daily."
+                assert text_doc.status == "extracting_claims"  # no conversion stage for text
+                rerun_mock.assert_called_once_with(text_doc_id, from_extraction=True)
+                session.delete(text_doc)
+            print("OK")
+
+            print("\n--- pasted text: explicit title wins; empty, whitespace-only and oversized text are rejected ---")
+            r = client.post("/api/v1/verification/text", json={"text": "Some claim.", "title": "My title"}, headers=h_a)
+            assert r.status_code == 202
+            with get_session() as session:
+                titled = session.get(VerificationDocument, int(r.get_json()["source_key"]))
+                assert titled.filename == "My title"
+                session.delete(titled)
+            from app.config import MAX_VERIFICATION_TEXT_CHARS
+            assert client.post("/api/v1/verification/text", json={"text": ""}, headers=h_a).status_code == 422
+            assert client.post("/api/v1/verification/text", json={"text": "   \n "}, headers=h_a).status_code == 400
+            assert client.post("/api/v1/verification/text", json={"text": "x" * (MAX_VERIFICATION_TEXT_CHARS + 1)}, headers=h_a).status_code == 422
+            assert client.post("/api/v1/verification/text", json={"text": "Some claim."}).status_code == 401
             print("OK")
 
             print("\n--- no auth: 401 ---")
