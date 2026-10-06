@@ -6,6 +6,7 @@ be downloaded again.
     POST   /api/v1/releases/                    publish a version (admin; multipart)
     POST   /api/v1/releases/<id>/download-url   a link to the file, valid for 2 minutes
     GET    /api/v1/releases/<id>/file?t=...     the APK, as an attachment
+    GET    /api/v1/releases/latest/apk          the newest APK, no login: the one link to share
     DELETE /api/v1/releases/<id>                delete a version (admin)
 
 Why a separate download link: a phone's browser downloads a file by
@@ -134,6 +135,35 @@ class ReleaseList(MethodView):
             return _to_dict(release, latest), 201
 
 
+def _apk_response(release: AppRelease, data: bytes, cache: str) -> Response:
+    return Response(
+        data,
+        mimetype="application/vnd.android.package-archive",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_filename(release)}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": cache,
+        },
+    )
+
+
+@blp.route("/latest/apk")
+class ReleaseLatest(MethodView):
+    def get(self):
+        """The newest version of the Android app, with no login: one fixed link to share.
+
+        Deliberately public. The app is useless without an account, and the file
+        holds no secret (only the server's public address).
+        """
+        with get_session() as session:
+            release = session.query(AppRelease).order_by(AppRelease.version_code.desc()).first()
+            stored = session.get(AppReleaseFile, release.id) if release else None
+            if stored is None:
+                abort(404, message="No Android app has been published yet.")
+            # "no-cache": a browser may keep the file but must ask before reusing it, so the link always gives the current version.
+            return _apk_response(release, stored.data, "no-cache")
+
+
 @blp.route("/<int:release_id>/download-url")
 class ReleaseDownloadUrl(MethodView):
     @jwt_required()
@@ -165,15 +195,7 @@ class ReleaseFile(MethodView):
             stored = session.get(AppReleaseFile, release_id)
             if release is None or stored is None:
                 abort(404, message="Release not found")
-            return Response(
-                stored.data,
-                mimetype="application/vnd.android.package-archive",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{_filename(release)}"',
-                    "X-Content-Type-Options": "nosniff",
-                    "Cache-Control": "private, no-store",
-                },
-            )
+            return _apk_response(release, stored.data, "private, no-store")
 
 
 @blp.route("/<int:release_id>")

@@ -52,6 +52,7 @@ admin, reader = login("admin@test.local", "pw-admin"), login("reader@test.local"
 assert client.get("/api/v1/releases/").status_code == 401
 assert publish(reader, apk()).status_code == 403
 assert client.get("/api/v1/releases/", headers=reader).get_json() == {"releases": [], "total": 0}
+assert client.get("/api/v1/releases/latest/apk").status_code == 404, "nothing published yet"
 
 # --- what is refused ---
 assert publish(admin, b"not a zip").status_code == 422
@@ -77,7 +78,14 @@ listed = client.get("/api/v1/releases/", headers=reader).get_json()
 assert [(r["version_name"], r["is_latest"]) for r in listed["releases"]] == [("0.2.0", True), ("0.1.0", False)]
 assert listed["releases"][0]["notes"] == "" and len(listed["releases"][0]["sha256"]) == 64
 
-# --- downloading: only through a link, the link is for one release, and it expires ---
+# --- the public link: no login, always the newest version ---
+latest = client.get("/api/v1/releases/latest/apk")
+assert latest.status_code == 200 and latest.data == apk(b"second"), "must be the highest version code"
+assert latest.headers["Content-Disposition"] == 'attachment; filename="book-rag-0.2.0.apk"'
+assert latest.headers["Cache-Control"] == "no-cache"
+assert client.get("/api/v1/releases/").status_code == 401, "the list must still need a login"
+
+# --- downloading a chosen version: only through a link, the link is for one release, and it expires ---
 link = client.post(f"/api/v1/releases/{second['id']}/download-url", headers=reader).get_json()
 assert link["filename"] == "book-rag-0.2.0.apk" and link["expires_in"] == 120
 got = client.get(link["url"])  # no Authorization header, as a browser following a link
@@ -101,5 +109,6 @@ assert client.delete(f"/api/v1/releases/{second['id']}", headers=admin).status_c
 with get_session() as session:
     assert session.query(AppRelease).count() == 1 and session.query(AppReleaseFile).count() == 1
 assert client.get("/api/v1/releases/", headers=reader).get_json()["releases"][0]["is_latest"]
+assert client.get("/api/v1/releases/latest/apk").data == apk(), "after deleting 0.2.0 the public link falls back to 0.1.0"
 
 print("ALL RELEASE TESTS PASSED")
