@@ -1,4 +1,4 @@
-import { Plus, MoreHorizontal, Trash2, LogOut } from "lucide-react";
+import { Plus, MoreHorizontal, Trash2, LogOut, Smartphone } from "lucide-react";
 import { Button } from "./ui/Button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "./ui/DropdownMenu";
 import { cn } from "../lib/utils";
@@ -22,7 +22,7 @@ function groupChatsByDate(chats) {
   return groups;
 }
 
-export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, user, onLogout, open }) {
+export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, onDeleteChat, onOpenReleases, user, onLogout, open }) {
   const groups = groupChatsByDate(chats);
 
   return (
@@ -92,6 +92,10 @@ export default function Sidebar({ chats, activeChatId, onSelectChat, onNewChat, 
           <p className="text-xs text-muted-foreground px-3 py-2">No chats yet</p>
         )}
       </div>
+
+      <button onClick={onOpenReleases} className="flex items-center gap-2 border-t border-border px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground">
+        <Smartphone className="h-3.5 w-3.5" /> Android app
+      </button>
 
       {user && (
         <div className="border-t border-border p-3 flex items-center justify-between">

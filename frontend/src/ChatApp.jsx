@@ -3,6 +3,7 @@ import { Menu, Plus } from "lucide-react";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import CitationPanel from "./components/CitationPanel";
+import ReleasesPage from "./components/ReleasesPage";
 import {
   fetchChats, fetchChat, fetchBook, fetchBooks, fetchPaper, fetchPapers,
   deleteChat, streamAsk, UnauthorizedError,
@@ -23,6 +24,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
   const [selectedSources, setSelectedSources] = useState([]); // empty = search every item in the current corpus
   const [corpus, setCorpus] = useState("books"); // "books" | "papers" | "both"
   const [navOpen, setNavOpen] = useState(false); // mobile only: the sidebar is a slide-in drawer below md
+  const [showReleases, setShowReleases] = useState(false); // the "Android app" page, shown in place of the chat
 
   const handleError = useCallback((err) => {
     if (err instanceof UnauthorizedError) {
@@ -48,6 +50,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
 
   const selectChat = async (chatId) => {
     setNavOpen(false);
+    setShowReleases(false);
     setActiveChatId(chatId);
     setSelectedCitation(null);
     setSelectedSources([]); // scope isn't persisted per chat -- always reopen unscoped
@@ -61,6 +64,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
 
   const startNewChat = () => {
     setNavOpen(false);
+    setShowReleases(false);
     setActiveChatId(null);
     setMessages([]);
     setSelectedCitation(null);
@@ -178,9 +182,13 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
         onSelectChat={selectChat}
         onNewChat={startNewChat}
         onDeleteChat={handleDeleteChat}
+        onOpenReleases={() => { setNavOpen(false); setSelectedCitation(null); setShowReleases(true); }}
         user={user}
         onLogout={onLogout}
       />
+      {showReleases ? (
+        <ReleasesPage user={user} onBack={() => setShowReleases(false)} onSessionExpired={onSessionExpired} />
+      ) : (
       <ChatWindow
         messages={messages}
         isStreaming={isStreaming}
@@ -193,6 +201,7 @@ export default function ChatApp({ user, onSessionExpired, onLogout }) {
         corpus={corpus}
         onCorpusChange={setCorpus}
       />
+      )}
       {selectedCitation && (
         <CitationPanel
           citation={selectedCitation}

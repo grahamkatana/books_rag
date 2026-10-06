@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Library } from "lucide-react";
 import { Button } from "./ui/Button";
 import { login } from "../api/client";
 
@@ -30,9 +29,7 @@ export default function Login({ onSuccess }) {
         className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-sm space-y-4"
       >
         <div className="flex flex-col items-center gap-2 mb-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-accent-foreground">
-            <Library className="h-5 w-5" />
-          </div>
+          <img src="/logo.png" alt="" className="h-10 w-10 rounded-xl" />
           <h1 className="text-lg font-semibold text-foreground">Book RAG</h1>
         </div>
 

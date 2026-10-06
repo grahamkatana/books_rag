@@ -51,3 +51,14 @@ backups/
 run_step.sh
 RESUME.md
 continue.md
+# Android app (android/): build output and signing material must never be committed.
+# android/.gitignore says the same; this is the safety net if that file is ever edited or lost.
+android/**/build/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+android/keystore.properties
+*.jks
+*.keystore
+*.p12
+*.apk

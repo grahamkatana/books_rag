@@ -40,3 +40,6 @@ run_step.sh
 
 # OS noise
 .DS_Store
+
+# The Android app is built on its own and holds signing configuration locally.
+android/

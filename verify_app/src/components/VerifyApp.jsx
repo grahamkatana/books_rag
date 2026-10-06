@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Upload, FileText, ClipboardPaste, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, ShieldCheck, RefreshCw, ShieldQuestion, Menu } from "lucide-react";
+import { Upload, FileText, ClipboardPaste, Loader2, AlertCircle, CheckCircle2, Trash2, LogOut, RefreshCw, ShieldQuestion, Menu } from "lucide-react";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/Dialog";
@@ -291,7 +291,7 @@ export default function VerifyApp({ user, onLogout, onSessionExpired }) {
           }
         >
           <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <img src="/logo.png" alt="" className="h-6 w-6 rounded-md" />
             <span className="text-sm font-semibold text-foreground">Book RAG Verify</span>
           </div>
 

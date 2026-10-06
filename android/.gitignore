@@ -1,0 +1,19 @@
+# Build output
+build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+
+# Machine-specific and secret: NEVER commit these
+local.properties
+keystore.properties
+*.jks
+*.keystore
+*.p12
+
+# IDE / OS
+.idea/
+*.iml
+.DS_Store
+captures/

@@ -1,0 +1,10 @@
+<resources>
+    <!-- The window is the app's own ground colour from the first frame (light or dark, following
+         the phone), so there is no flash of the wrong colour before Compose draws. -->
+    <style name="Theme.BookRag" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/ground</item>
+        <item name="android:colorBackground">@color/ground</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

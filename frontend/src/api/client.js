@@ -154,3 +154,31 @@ export async function streamAsk(payload, { onChatId, onDelta, onDone, onError })
     onError?.(err);
   }
 }
+
+// ---- Android app releases ----
+
+async function releaseRequest(path, options = {}) {
+  const res = await authedFetch(`${API_BASE}/releases${path}`, options);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.message || `Request failed (${res.status})`);
+  return body;
+}
+
+export const fetchReleases = () => releaseRequest("/").then((r) => r.releases);
+export const deleteRelease = (id) => releaseRequest(`/${id}`, { method: "DELETE" });
+
+/** Publish a new version (admin). */
+export function uploadRelease({ file, versionName, versionCode, notes }) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("version_name", versionName);
+  form.append("version_code", String(versionCode));
+  form.append("notes", notes || "");
+  return releaseRequest("/", { method: "POST", body: form });
+}
+
+/** Starts the download. A plain link cannot carry the login, so the API issues a link good for two minutes. */
+export async function downloadRelease(id) {
+  const { url } = await releaseRequest(`/${id}/download-url`, { method: "POST" });
+  window.location.href = url; // the response is an attachment, so the browser downloads it and stays on this page
+}

@@ -462,6 +462,31 @@ anywhere beyond your own machine:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
+## Android app releases
+
+The Android app (`android/`, see its own README) is distributed by this API: every published
+version is stored in the database and can be downloaded again. The web app shows them on its
+**Android app** page (in the sidebar); administrators publish and delete versions there.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/v1/releases/` | All versions, newest first, with size and SHA-256. |
+| POST | `/api/v1/releases/` | Publish a version (admin). Multipart: `file`, `version_name`, `version_code`, `notes`. |
+| POST | `/api/v1/releases/<id>/download-url` | A link to the file, valid for 2 minutes. |
+| GET | `/api/v1/releases/<id>/file?t=...` | The APK, as an attachment. The token replaces the login header, which a plain browser link cannot send. |
+| DELETE | `/api/v1/releases/<id>` | Delete a version (admin). |
+
+A version code must be higher than every earlier one (Android uses it to decide what is newer).
+Uploads are limited to 50 MB and must be a zip containing `AndroidManifest.xml` and compiled code.
+The download token is signed separately from login tokens, so it opens nothing else in the API and
+a login token does not open the file.
+
+Test it against a throwaway SQLite file only (the script refuses anything else):
+
+```bash
+DATABASE_URL=sqlite:////tmp/releases_test.db uv run python tests/test_releases.py
+```
+
 ## Admin REST API
 
 The same admin operations the `/admin` panel offers, as JSON endpoints

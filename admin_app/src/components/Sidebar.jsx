@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, BookOpen, FileText, MessageSquare, LogOut, ShieldCheck, RefreshCw, Loader2, Flag } from "lucide-react";
+import { Users, BookOpen, FileText, MessageSquare, LogOut, RefreshCw, Loader2, Flag } from "lucide-react";
 import { cn } from "../lib/utils";
 import { triggerIngest, UnauthorizedError } from "../api/client";
 import { pollJobUntilDone } from "../lib/pollJob";
@@ -58,7 +58,7 @@ export default function Sidebar({ user, onLogout, onSessionExpired, activePage, 
       open ? "translate-x-0" : "-translate-x-full"
     )}>
       <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-        <ShieldCheck className="h-5 w-5 text-primary" />
+        <img src="/logo.png" alt="" className="h-6 w-6 rounded-md" />
         <span className="text-sm font-semibold text-foreground">Book RAG Admin</span>
       </div>
 
