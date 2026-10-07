@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, BookOpen, FileText, MessageSquare, LogOut, RefreshCw, Loader2, Flag } from "lucide-react";
+import { Users, BookOpen, FileText, MessageSquare, LogOut, RefreshCw, Loader2, Flag, Wallet } from "lucide-react";
 import { cn } from "../lib/utils";
 import { triggerIngest, UnauthorizedError } from "../api/client";
 import { pollJobUntilDone } from "../lib/pollJob";
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { key: "papers", label: "Papers", icon: FileText },
   { key: "chats", label: "Chats", icon: MessageSquare },
   { key: "flagged", label: "Flagged", icon: Flag },
+  { key: "usage", label: "Usage & cost", icon: Wallet },
 ];
 
 export default function Sidebar({ user, onLogout, onSessionExpired, activePage, onNavigate, open }) {

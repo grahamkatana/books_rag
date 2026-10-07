@@ -30,6 +30,7 @@ the whole document fails.
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from app.usage import record_agent
 from app.config import CONTEXT_MODEL, MAX_CONTEXT_INPUT_CHARS
 from app.db.session import get_session
 from app.models.verification import VerificationDocument
@@ -91,6 +92,7 @@ def get_document_context(markdown: str, agent: Agent | None = None) -> DocumentC
     agent = agent or build_context_agent()
     truncated = markdown[:MAX_CONTEXT_INPUT_CHARS]
     result = agent.run_sync(truncated)
+    record_agent("context", "openai", CONTEXT_MODEL, result)
     return result.output
 
 

@@ -1,5 +1,9 @@
 package com.graham_katana.bookrag.feature.chat
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -60,6 +64,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
@@ -87,6 +93,29 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     var draft by rememberSaveable { mutableStateOf("") }
+    var readAloud by rememberSaveable { mutableStateOf(false) }
+    val speaker = rememberSpeaker()
+    val feed = remember { SpeechFeed() }
+    var streamedId by remember { mutableStateOf<Long?>(null) }
+    var dictationBase by remember { mutableStateOf("") }
+    val listener = rememberListener { text, _ -> draft = (dictationBase + " " + text).trim() }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) { speaker.stop(); dictationBase = draft; listener.start() } }
+    val tapMic = {
+        when {
+            listener.listening -> listener.stop()
+            listener.permitted -> { speaker.stop(); dictationBase = draft; listener.start() }
+            else -> askMic.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+    // Read a new answer aloud as it arrives, one sentence at a time. An answer that was already on screen is never read unasked.
+    val last = state.messages.lastOrNull()
+    LaunchedEffect(last?.id, last?.text, state.isStreaming, readAloud) {
+        if (last == null || last.fromUser) return@LaunchedEffect
+        if (state.isStreaming) streamedId = last.id
+        if (readAloud && streamedId == last.id) feed.next(last.id, last.text, !state.isStreaming)?.let(speaker::say)
+    }
+    LaunchedEffect(readAloud) { if (!readAloud) speaker.stop() }
+    LaunchedEffect(state.chatId, state.isLoadingChat) { speaker.stop(); feed.reset(); streamedId = null }
     var pickingSources by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<ChatSummary?>(null) }
 
@@ -96,7 +125,7 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
     }
 
     val canSend = draft.isNotBlank() && !state.isStreaming && !state.isLoadingChat
-    val send = { if (canSend) { viewModel.send(draft); draft = "" } }
+    val send = { if (canSend) { speaker.stop(); feed.reset(); if (listener.listening) listener.stop(); viewModel.send(draft); draft = "" } }
 
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -133,7 +162,10 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
                 TopAppBar(
                     title = { Text(state.chats.firstOrNull { it.id == state.chatId }?.title ?: "New chat", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = { IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Chats") } },
-                    actions = { IconButton(onClick = viewModel::newChat) { Icon(Icons.Default.Add, "New chat") } },
+                    actions = {
+                        IconButton(onClick = { readAloud = !readAloud }) { Icon(VoiceIcons.Speaker, if (readAloud) "Turn off read aloud" else "Read answers aloud", tint = LocalContentColor.current.copy(alpha = if (readAloud) 1f else 0.45f)) }
+                        IconButton(onClick = viewModel::newChat) { Icon(Icons.Default.Add, "New chat") }
+                    },
                 )
             },
             bottomBar = {
@@ -153,7 +185,12 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
                         }
                     }
                     Row(verticalAlignment = Alignment.Bottom) {
-                        OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text("Ask the library a question…") }, maxLines = 5, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text(if (listener.listening) "Listening…" else listener.error ?: "Ask the library a question…") }, maxLines = 5, modifier = Modifier.weight(1f))
+                        IconButton(
+                            onClick = tapMic,
+                            enabled = !state.isStreaming && !state.isLoadingChat,
+                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp).background(if (listener.listening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                        ) { Icon(if (listener.listening) VoiceIcons.Stop else VoiceIcons.Mic, if (listener.listening) "Stop dictating" else "Speak your question", tint = if (listener.listening) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant) }
                         IconButton(
                             onClick = send,
                             enabled = canSend,
@@ -171,7 +208,7 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
                     state.messages.isEmpty() -> EmptyState(onPick = viewModel::send)
                     else -> LazyColumn(state = listState, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                         items(state.messages, key = { it.id }) { message ->
-                            if (message.fromUser) UserBubble(message.text) else AnswerView(message, onCitation = { viewModel.openCitation(message, it) })
+                            if (message.fromUser) UserBubble(message.text) else AnswerView(message, onCitation = { viewModel.openCitation(message, it) }, speaker = speaker, canRead = !state.isStreaming, onSpeak = { feed.reset(); streamedId = null })
                         }
                     }
                 }
@@ -222,7 +259,7 @@ private fun UserBubble(text: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AnswerView(message: UiMessage, onCitation: (Int) -> Unit) {
+private fun AnswerView(message: UiMessage, onCitation: (Int) -> Unit, speaker: Speaker, canRead: Boolean, onSpeak: () -> Unit) {
     val answer = remember(message.text) { renderAnswer(message.text) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when {
@@ -230,6 +267,7 @@ private fun AnswerView(message: UiMessage, onCitation: (Int) -> Unit) {
             message.error == null -> Text("Searching the library…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         message.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        if (canRead && message.error == null && answer.text.isNotEmpty()) ReadButton(speaker) { speaker.stop(); onSpeak(); speaker.say(speakable(message.text)) }
         if (answer.references.isNotEmpty()) {
             Text("REFERENCES", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -316,5 +354,19 @@ private fun SourcePicker(state: ChatUiState, onToggle: (String) -> Unit, onClear
                 if (shown.isEmpty()) item { Text(if (state.pickableSources.isEmpty()) "No $noun in the library yet." else "Nothing matches.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp)) }
             }
         }
+    }
+}
+
+/** Reads one answer aloud, or stops the voice if it is already talking. */
+@Composable
+private fun ReadButton(speaker: Speaker, onRead: () -> Unit) {
+    if (!speaker.ready) return
+    TextButton(
+        onClick = { if (speaker.speaking) speaker.stop() else onRead() },
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+    ) {
+        Icon(if (speaker.speaking) VoiceIcons.Stop else VoiceIcons.Speaker, null, Modifier.size(18.dp))
+        Text(if (speaker.speaking) "  Stop" else "  Read aloud", style = MaterialTheme.typography.labelMedium)
     }
 }

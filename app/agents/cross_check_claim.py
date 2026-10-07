@@ -23,6 +23,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from app.usage import record_agent
 from app.config import CROSS_CHECK_MODEL, DEEPSEEK_API_KEY, DEEPSEEK_BASE_URL
 from app.db.session import get_session
 from app.models.verification import VerificationDocument, ExtractedClaim, ClaimVerification, ClaimCrossCheck
@@ -124,6 +125,7 @@ def format_verification_for_review(claim_text: str, verification: ClaimVerificat
 def cross_check_claim_text(review_prompt: str, agent: Agent | None = None) -> CrossCheckResult:
     agent = agent or build_cross_check_agent()
     result = agent.run_sync(review_prompt)
+    record_agent("cross_check", "deepseek", CROSS_CHECK_MODEL, result)
     return result.output
 
 

@@ -31,6 +31,8 @@ DEFAULT_CHAT_MODEL = os.environ.get("DEFAULT_CHAT_MODEL", "gpt-5.4-mini")
 # base URL) is the cheap independent provider here -- Claude was dropped
 # for cost.
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+# Optional: an OpenAI organisation admin key lets the usage page show month-to-date spend (the Costs API needs it).
+OPENAI_ADMIN_KEY = os.environ.get("OPENAI_ADMIN_KEY")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 CROSS_CHECK_MODEL = os.environ.get("CROSS_CHECK_MODEL", "deepseek-chat")
 

@@ -33,6 +33,7 @@ import requests
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
+from app.usage import record_agent
 from app.config import DEFAULT_CHAT_MODEL, DEFAULT_TOP_K, CROSSREF_MAILTO
 from app.api.clients import get_openai_client, get_qdrant_client
 from app.db.session import get_session
@@ -381,6 +382,7 @@ def verify_claim_text(
     if document_context:
         prompt = f"Document context (for your understanding only):\n{document_context}\n\n---\n\n{prompt}"
     result = agent.run_sync(prompt, deps=deps)
+    record_agent("verify", "openai", DEFAULT_CHAT_MODEL, result)
 
     return result.output, deps.all_evidence
 

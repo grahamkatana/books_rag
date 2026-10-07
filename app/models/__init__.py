@@ -6,6 +6,7 @@ from app.models.paper import Paper
 from app.models.verification import VerificationDocument, ExtractedClaim, ClaimVerification, ClaimEvidence, ClaimCrossCheck
 from app.models.corpus_context_check import CorpusContextCheck
 from app.models.app_release import AppRelease, AppReleaseFile
+from app.models.usage import UsageEvent, ModelPrice, ProviderCredit
 
 __all__ = [
     "Base", "Book", "Chat", "Message", "Citation", "User", "Paper",

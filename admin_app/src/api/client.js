@@ -188,3 +188,20 @@ export function setMarkedForDelete(checkId, markedForDelete) {
     body: JSON.stringify({ marked_for_delete: markedForDelete }),
   });
 }
+
+// ---- usage and cost ----
+export function fetchUsage(days) {
+  return request(`/admin/usage/summary?days=${days}`);
+}
+export function fetchPrices() {
+  return request("/admin/usage/prices").then((r) => r.prices);
+}
+export function savePrice(price) {
+  return request("/admin/usage/prices", { method: "PUT", body: JSON.stringify(price) });
+}
+export function fetchBalances() {
+  return request("/admin/usage/balances");
+}
+export function saveCredit(provider, amount_usd) {
+  return request("/admin/usage/credits", { method: "PUT", body: JSON.stringify({ provider, amount_usd }) });
+}

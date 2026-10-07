@@ -6,6 +6,7 @@ turn (question + answer + parsed citations) to the chat history DB.
 
 import csv
 
+from app.usage import estimate_tokens, record, record_openai
 from sqlalchemy.orm import Session
 
 from qdrant_client import QdrantClient
@@ -33,6 +34,7 @@ def _normalize_sources(source_filter) -> list[str] | None:
 
 def embed_query(openai_client, text: str, model: str = EMBEDDING_MODEL) -> list:
     response = openai_client.embeddings.create(model=model, input=[text])
+    record("embed", "openai", model, response.usage.prompt_tokens if response.usage else estimate_tokens(text), estimated=not response.usage)
     return response.data[0].embedding
 
 
@@ -191,6 +193,7 @@ def ask_llm(openai_client, question: str, context: str, model: str, history: str
         model=model,
         messages=_build_messages(question, context, history),
     )
+    record_openai("chat", model, response.usage)
     return response.choices[0].message.content
 
 
@@ -201,8 +204,13 @@ def ask_llm_stream(openai_client, question: str, context: str, model: str, histo
         model=model,
         messages=_build_messages(question, context, history),
         stream=True,
+        stream_options={"include_usage": True},
     )
     for chunk in stream:
+        if getattr(chunk, "usage", None):  # the last chunk carries the token counts and no choices
+            record_openai("chat", model, chunk.usage)
+        if not chunk.choices:
+            continue
         delta = chunk.choices[0].delta.content
         if delta:
             yield delta

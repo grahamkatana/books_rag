@@ -17,6 +17,7 @@ into a validated schema rather than parsing free text by hand.
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
+from app.usage import record_agent
 from app.config import DEFAULT_CHAT_MODEL
 from app.db.session import get_session
 from app.models.verification import VerificationDocument, ExtractedClaim
@@ -132,6 +133,7 @@ def extract_claims_from_section(section_text: str, agent: Agent | None = None, d
             f"{document_context}\n\n---\n\nSection text to extract claims from:\n{section_text}"
         )
     result = agent.run_sync(prompt)
+    record_agent("extract", "openai", DEFAULT_CHAT_MODEL, result)
     return [item.text for item in result.output.claims]
 
 

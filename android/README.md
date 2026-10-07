@@ -6,6 +6,7 @@ One app for the two things a reader does with Book RAG: **ask** the library a qu
 
 ## What it does
 
+- **Voice**: tap the microphone to dictate a question, and turn on the speaker icon (or tap Read aloud on an answer) to hear answers. Uses the phone's own speech services; no audio is stored. See notes/ for details.
 **Ask**
 - Log in with the email and password an administrator gave you (there is no sign-up).
 - **Your own server**: tap the "Server:" line on the login screen to enter the address of a

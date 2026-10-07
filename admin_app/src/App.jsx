@@ -7,6 +7,7 @@ import BooksPage from "./components/BooksPage";
 import PapersPage from "./components/PapersPage";
 import ChatsPage from "./components/ChatsPage";
 import FlaggedPage from "./components/FlaggedPage";
+import UsagePage from "./components/UsagePage";
 import { fetchMe, getToken, logout as apiLogout } from "./api/client";
 
 export default function App() {
@@ -77,6 +78,7 @@ export default function App() {
       {activePage === "books" && <BooksPage onSessionExpired={handleLogout} />}
       {activePage === "papers" && <PapersPage onSessionExpired={handleLogout} />}
       {activePage === "chats" && <ChatsPage onSessionExpired={handleLogout} />}
+      {activePage === "usage" && <UsagePage onSessionExpired={handleLogout} />}
       {activePage === "flagged" && <FlaggedPage onSessionExpired={handleLogout} />}
     </div>
   );
