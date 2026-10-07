@@ -184,19 +184,17 @@ fun ChatScreen(viewModel: ChatViewModel, email: String, onLogout: () -> Unit) {
                             )
                         }
                     }
-                    Row(verticalAlignment = Alignment.Bottom) {
-                        OutlinedTextField(value = draft, onValueChange = { draft = it }, placeholder = { Text(if (listener.listening) "Listening…" else listener.error ?: "Ask the library a question…") }, maxLines = 5, modifier = Modifier.weight(1f))
-                        IconButton(
-                            onClick = tapMic,
-                            enabled = !state.isStreaming && !state.isLoadingChat,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp).background(if (listener.listening) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant, CircleShape),
-                        ) { Icon(if (listener.listening) VoiceIcons.Stop else VoiceIcons.Mic, if (listener.listening) "Stop dictating" else "Speak your question", tint = if (listener.listening) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant) }
-                        IconButton(
-                            onClick = send,
-                            enabled = canSend,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = if (canSend) 1f else 0.35f), CircleShape),
-                        ) { Icon(Icons.AutoMirrored.Filled.Send, "Send", tint = MaterialTheme.colorScheme.onPrimary) }
-                    }
+                    ChatInput(
+                        draft = draft,
+                        onDraft = { draft = it },
+                        placeholder = if (listener.listening) "Listening…" else listener.error ?: "Ask the library a question…",
+                        listening = listener.listening,
+                        canSend = canSend,
+                        busy = state.isStreaming || state.isLoadingChat,
+                        onSend = send,
+                        onMic = tapMic,
+                        modifier = Modifier,
+                    )
                 }
             },
             // The screen sits inside the app's own frame, which has already made room for the system bars and keyboard.
