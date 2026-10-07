@@ -1,9 +1,16 @@
-"""Usage counting and costing. Runs on an in-memory SQLite database, never the real one."""
+"""Usage counting and costing. Runs on an in-memory SQLite database, never the real one.
+
+Plain script like the other tests here (CI runs every tests/*.py with python, and pytest is not installed).
+"""
+import inspect
+import sys
+
+sys.path.insert(0, ".")
+from contextlib import contextmanager
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -15,8 +22,14 @@ from app.models.usage import UsageEvent
 from app.usage import balances
 
 
-@pytest.fixture
-def factory():
+class approx:
+    def __init__(self, value): self.value = value
+    def __eq__(self, other): return abs(other - self.value) < 1e-6
+    def __repr__(self): return f"approx({self.value})"
+
+
+@contextmanager
+def _factory():
     engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     f = sessionmaker(bind=engine)
@@ -25,13 +38,13 @@ def factory():
 
 
 def test_cost_per_million_tokens():
-    assert usage.cost_usd(1_000_000, 0, (0.13, 0)) == pytest.approx(0.13)
-    assert usage.cost_usd(500_000, 2_000_000, (1, 3)) == pytest.approx(6.5)
+    assert usage.cost_usd(1_000_000, 0, (0.13, 0)) == approx(0.13)
+    assert usage.cost_usd(500_000, 2_000_000, (1, 3)) == approx(6.5)
     assert usage.cost_usd(10, 10, None) is None
 
 
 def test_projection_carries_the_average_to_month_end():
-    assert usage.project_month(10.0, datetime(2026, 10, 11)) == pytest.approx(31.0)
+    assert usage.project_month(10.0, datetime(2026, 10, 11)) == approx(31.0)
     assert usage.project_month(0.0, datetime(2026, 10, 1)) == 0.0
 
 
@@ -42,9 +55,9 @@ def test_record_and_summary(factory):
         usage.set_price(s, "openai", "text-embedding-3-large", 0.13, 0)
         out = usage.summary(s, 30)
     by = {m["model"]: m for m in out["by_model"]}
-    assert by["text-embedding-3-large"]["cost_usd"] == pytest.approx(0.13)
+    assert by["text-embedding-3-large"]["cost_usd"] == approx(0.13)
     assert by["gpt-5.4-mini"]["priced"] is False and "openai/gpt-5.4-mini" in out["unpriced"]
-    assert out["month_to_date_usd"] == pytest.approx(0.13)
+    assert out["month_to_date_usd"] == approx(0.13)
 
 
 def test_credit_estimate_subtracts_spend_since_entry(factory):
@@ -54,7 +67,7 @@ def test_credit_estimate_subtracts_spend_since_entry(factory):
     usage.record("chat", "openai", "m", 100_000)  # $1.00 after the credit was entered
     with factory() as s:
         left = usage.estimated_credit_left(s)[0]
-    assert left["estimated_left_usd"] == pytest.approx(4.0)
+    assert left["estimated_left_usd"] == approx(4.0)
 
 
 def test_record_never_raises_when_the_database_is_down():
@@ -92,7 +105,7 @@ def test_deepseek_balance_reads_the_documented_shape():
 def test_openai_month_spend_adds_every_bucket():
     reply = MagicMock(); reply.json.return_value = {"data": [{"results": [{"amount": {"value": 1.5}}, {"amount": {"value": 0.25}}]}, {"results": [{"amount": {"value": 2}}]}]}
     with patch("app.usage.balances.requests.get", return_value=reply):
-        assert balances.openai_month_spend("k")["month_to_date_usd"] == pytest.approx(3.75)
+        assert balances.openai_month_spend("k")["month_to_date_usd"] == approx(3.75)
 
 
 def test_one_failing_provider_does_not_hide_the_rest():
@@ -109,3 +122,16 @@ def test_a_response_without_usage_is_estimated_not_a_crash(factory):
     with factory() as s:
         row = s.scalars(select(UsageEvent)).one()
     assert (row.input_tokens, row.estimated) == (2, True)
+
+
+if __name__ == "__main__":
+    count = 0
+    for name, fn in list(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            if "factory" in inspect.signature(fn).parameters:
+                with _factory() as f:
+                    fn(f)
+            else:
+                fn()
+            count += 1
+    print(f"All {count} usage assertions passed.")

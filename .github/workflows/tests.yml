@@ -23,6 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # SonarQube needs the full history to blame code correctly
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
@@ -41,11 +43,22 @@ jobs:
           set -e
           for f in tests/*.py; do
             echo "=== $f ==="
-            uv run python "$f"
+            uv run coverage run --append --source=app "$f"
           done
+          uv run coverage xml
 
       # Most tests are fully self-contained (synthetic fixtures, no real
       # books needed). Two specifically need the actual (copyrighted)
       # book PDFs used during development -- those are never committed
       # to this repo, so those two tests detect their absence and print
       # a [skip] line and exit 0 rather than fail. That's expected here.
+
+      # Code quality scan. It only reports: it never fails the build (continue-on-error), and it does not
+      # wait for the quality gate. A missing token or a Sonar outage shows up as a warning here.
+      - name: SonarQube scan
+        if: always()
+        continue-on-error: true
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
