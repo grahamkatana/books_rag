@@ -34,6 +34,15 @@ def record_openai(kind: str, model: str, usage) -> None:
         record(kind, "openai", model, getattr(usage, "prompt_tokens", 0), getattr(usage, "completion_tokens", 0) or 0)
 
 
+def record_embedding(model: str, response, texts: list[str]) -> None:
+    """Record an embeddings call: the provider's token count if it gave one, otherwise an estimate from the text."""
+    used = getattr(getattr(response, "usage", None), "prompt_tokens", None)
+    if isinstance(used, int):
+        record("embed", "openai", model, used)
+    else:
+        record("embed", "openai", model, sum(estimate_tokens(t) for t in texts), estimated=True)
+
+
 def record_agent(kind: str, provider: str, model: str, result) -> None:
     """Record a pydantic-ai run's token usage. Anything that is not a real count (a test double) is ignored."""
     try:

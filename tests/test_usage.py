@@ -100,3 +100,12 @@ def test_one_failing_provider_does_not_hide_the_rest():
          patch.object(balances, "deepseek_balance", side_effect=RuntimeError("boom")):
         out = balances.check_all()
     assert out[0]["kind"] == "error" and any(o["provider"] == "gemini" for o in out)
+
+
+def test_a_response_without_usage_is_estimated_not_a_crash(factory):
+    """Test doubles and some providers return no usage object; the answer must still work."""
+    class NoUsage: data = []
+    usage.record_embedding("text-embedding-3-large", NoUsage(), ["abcdefgh"])
+    with factory() as s:
+        row = s.scalars(select(UsageEvent)).one()
+    assert (row.input_tokens, row.estimated) == (2, True)

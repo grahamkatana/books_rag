@@ -25,7 +25,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ResponseHandlingException
 from qdrant_client.http.models import Distance, VectorParams, PointStruct, PayloadSchemaType
 
-from app.usage import estimate_tokens, record
+from app.usage import record_embedding
 from app.config import (
     CHUNKS_DIR, QDRANT_COLLECTION, QDRANT_URL, QDRANT_API_KEY, QDRANT_TIMEOUT,
     EMBEDDING_MODEL, EMBEDDING_DIM,
@@ -91,7 +91,7 @@ def load_all_chunks(chunks_dir=CHUNKS_DIR) -> list:
 
 def embed_batch(openai_client, texts: list, model: str = EMBEDDING_MODEL) -> list:
     response = openai_client.embeddings.create(model=model, input=texts)
-    record("embed", "openai", model, response.usage.prompt_tokens if response.usage else sum(estimate_tokens(t) for t in texts), estimated=not response.usage)
+    record_embedding(model, response, texts)
     return [item.embedding for item in response.data]
 
 

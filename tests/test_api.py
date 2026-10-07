@@ -52,7 +52,7 @@ class FakeOpenAIClient:
     class chat:
         class completions:
             @staticmethod
-            def create(model, messages, stream=False):
+            def create(model, messages, stream=False, **kwargs):
                 if stream:
                     words = "Agile methods emphasize iterative delivery and customer feedback.".split(" ")
                     return [FakeStreamChunk(w + " ") for w in words]
